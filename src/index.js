@@ -72,8 +72,9 @@ export class Casa extends DurableObject {
       return await rotear(req, { ...this.env, DB: this.db }, url);
     } catch (e) {
       const msg = e.message || 'Erro interno';
-      // `mensagem` é o texto pronto para a notificação do Atalho do iPhone
-      return json({ erro: msg, mensagem: `⚠️ pagaAI não anotou: ${msg}` }, e.status || 500);
+      // O Atalho do iPhone recebe texto puro, pronto para virar notificação
+      if (url.pathname === '/api/atalho') return texto(`⚠️ pagaAI não anotou: ${msg}`, e.status || 500);
+      return json({ erro: msg }, e.status || 500);
     }
   }
 }
@@ -303,7 +304,8 @@ async function atalho(req, env) {
     : `✅ Anotado: ${reais(valor)}${onde} (${categoria})`;
   const mensagem = `${linha1}\nGastos de ${NOMES_MES[Number(data.slice(5, 7)) - 1]}: ${reais(total)}`;
 
-  return json({ ok: true, id: r.id, categoria, valor: r.valor / 100, mensagem }, 201);
+  // Texto puro: no Atalho basta "Mostrar Notificação" com o "Conteúdo do URL"
+  return texto(mensagem, 201);
 }
 
 const NOMES_MES = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'];
@@ -351,6 +353,10 @@ function validar(b, env) {
 
 function erro(status, msg) {
   return Object.assign(new Error(msg), { status });
+}
+
+function texto(msg, status = 200) {
+  return new Response(msg, { status, headers: { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-store' } });
 }
 
 function json(dados, status = 200, headers = {}) {

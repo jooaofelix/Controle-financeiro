@@ -31,16 +31,12 @@ Faça isto **no iPhone de cada um** (muda só o nome em `pessoa`).
      | `cartao` | variável **Cartão ou Passe** (Card or Pass) |
      | `pessoa` | digite o seu nome, igual aparece no app (ex.: `Esposa`) |
 
-7. **Notificação de confirmação** (recomendado):
-   - Adicione a ação **Obter Valor do Dicionário** → Obter **Valor** da chave
-     `mensagem` em **Conteúdo da URL**.
-   - Adicione a ação **Mostrar Notificação** com a variável **Valor do Dicionário**.
-   - A cada compra aparece algo como:
-     > ✅ Anotado: R$ 45,90 em iFood (Alimentação)
-     > Gastos de novembro: R$ 2.978,70
+7. **Notificação de confirmação** (recomendado): adicione a ação **Mostrar Notificação**
+   e, no texto, escolha a variável **Conteúdo do URL**. O app já responde com a frase pronta:
+   > ✅ Anotado: R$ 45,90 em iFood (Alimentação)
+   > Gastos de novembro: R$ 2.978,70
 
-     Se algo der errado, a notificação mostra o motivo
-     (ex.: `⚠️ pagaAI não anotou: Senha inválida`).
+   Se algo der errado, a notificação mostra o motivo (ex.: `⚠️ pagaAI não anotou: Senha inválida`).
 8. Toque em **OK**. Pronto.
 
 ## Testar
