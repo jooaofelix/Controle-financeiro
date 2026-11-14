@@ -103,6 +103,7 @@
         <button class="btn-primario" data-novo="renda">💰 Adicionar salário</button>
         <button class="btn-sec" data-novo="conta">📄 Adicionar conta fixa</button>
         <button class="btn-sec" data-novo="cartao">💳 Adicionar cartão</button>
+        <button class="btn-sec" data-novo="divida">🧾 Adicionar dívida parcelada</button>
       </div>
     </section>
 
@@ -151,6 +152,12 @@
       <section class="card">
         <div class="card-titulo"><h2>Cartões</h2><button class="btn-add" data-novo="cartao">+ Adicionar</button></div>
         <div id="lista-cartoes" class="lista-plano"></div>
+      </section>
+
+      <section class="card">
+        <div class="card-titulo"><h2>Dívidas parceladas</h2><button class="btn-add" data-novo="divida">+ Adicionar</button></div>
+        <div id="resumo-dividas" class="resumo-dividas" hidden></div>
+        <div id="lista-dividas" class="lista-plano"></div>
       </section>
 
       <section class="card ajustes-resumo">

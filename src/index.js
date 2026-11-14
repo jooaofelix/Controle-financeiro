@@ -220,6 +220,19 @@ function validarPlano(b) {
       valor: paraCentavos(b.valor), flexivel: b.flexivel !== false,
     } };
   }
+  if (tipo === 'divida') {
+    const valor = paraCentavos(b.valor);
+    if (!valor) throw erro(400, 'Informe o valor da parcela');
+    if (!texto(b.nome)) throw erro(400, 'Informe o nome da dívida');
+    const total = parseInt(b.total, 10);
+    if (!(total >= 1 && total <= 240)) throw erro(400, 'Número de parcelas inválido');
+    if (!/^\d{4}-\d{2}$/.test(b.inicio || '')) throw erro(400, 'Mês da 1ª parcela inválido');
+    return { tipo, dados: {
+      nome: texto(b.nome), valor, total, inicio: b.inicio, dia: dia(b.dia),
+      pagamento: ['boleto', 'Nubank', 'Inter'].includes(b.pagamento) ? b.pagamento : 'boleto',
+      categoria: CATEGORIAS.includes(b.categoria) ? b.categoria : 'Compras',
+    } };
+  }
   if (tipo === 'ajustes') {
     return { tipo, dados: {
       saldoInicial: paraCentavosComSinal(b.saldoInicial),

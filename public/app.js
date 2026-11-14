@@ -1,6 +1,7 @@
 import {
   $, fmt, esc, api, aoDeslogar, CATS, cat, corCat, marcaDe, iconeMarca, iconeCategoria, MARCAS, mascote, toast,
 } from '/comum.js';
+import { contasDoMes } from '/dividas.js';
 import { abrirPlano } from '/plano.js';
 
 const MARCA_CONTA = { Nubank: 'nubank', Inter: 'inter' };
@@ -129,7 +130,9 @@ function renderProximas() {
   const hoje = new Date();
   if (mes !== hojeLocal().slice(0, 7)) { card.hidden = true; return; }
   const ultimoDia = new Date(hoje.getFullYear(), hoje.getMonth() + 1, 0).getDate();
-  const vencendo = itensPlano
+  const ym = hojeLocal().slice(0, 7);
+  const parcelas = contasDoMes(itensPlano.filter((i) => i.tipo === 'divida'), ym);
+  const vencendo = [...itensPlano, ...parcelas]
     .filter((i) => i.tipo === 'conta' || (i.tipo === 'cartao' && i.valor > 0))
     .map((i) => {
       const dia = Math.min(i.tipo === 'cartao' ? i.vencimento : i.dia, ultimoDia);

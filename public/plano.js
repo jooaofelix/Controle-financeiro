@@ -1,6 +1,13 @@
 // Tela "Planejar": salários, contas fixas, cartões e sugestões de vencimento
 import { $, fmt, fmtCurto, esc, api, CATS, cat, corCat, marcaDe, iconeMarca, iconeCategoria, iconeEmoji, mascote, toast } from '/comum.js';
 import { planejar, DIAS } from '/planejador.js';
+import { situacao, resumoDividas, contasDoMes, parcelasNoCartao, inicioDe, parcelaDoMes, mesAno } from '/dividas.js';
+
+function hojeLocal() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+const PAGAMENTOS = { boleto: 'Boleto / débito em conta', Nubank: 'Cartão Nubank', Inter: 'Cartão Inter' };
 
 let config = null;
 let itens = [];
@@ -20,9 +27,11 @@ export async function abrirPlano(cfg) {
 
 function montarPlano() {
   const ajustes = itens.find((i) => i.tipo === 'ajustes') || {};
+  const dividas = itens.filter((i) => i.tipo === 'divida');
   return {
     rendas: itens.filter((i) => i.tipo === 'renda'),
-    contas: itens.filter((i) => i.tipo === 'conta'),
+    // parcelas de boleto deste mês entram como contas fixas (não dá para mudar a data)
+    contas: [...itens.filter((i) => i.tipo === 'conta'), ...contasDoMes(dividas, hojeLocal().slice(0, 7))],
     cartoes: itens.filter((i) => i.tipo === 'cartao'),
     saldoInicial: ajustes.saldoInicial || 0,
     gastoVariavel: ajustes.gastoVariavel ?? gastoEstimado.porMes,
@@ -42,7 +51,7 @@ function iconeItem(i, classe = '') {
 function render() {
   const plano = montarPlano();
   resultado = planejar(plano);
-  const vazio = !plano.rendas.length && !plano.contas.length && !plano.cartoes.length;
+  const vazio = !itens.some((i) => i.tipo !== 'ajustes');
 
   $('#plano-vazio').hidden = !vazio;
   $('#plano-conteudo').hidden = vazio;
@@ -140,15 +149,20 @@ function renderListas(plano) {
   $('#lista-rendas').innerHTML = plano.rendas.map((r) => linha(r, `${esc(r.pessoa || r.descricao)}`, `Todo dia ${r.dia}`, `+ ${fmt(r.valor)}`, 'positivo')).join('')
     || '<p class="vazio">Adicione o salário de cada um.</p>';
   $('#lista-contas').innerHTML = plano.contas
+    .filter((c) => !c.divida)
     .sort((a, b) => a.dia - b.dia)
     .map((c) => linha(c, esc(c.nome), `Vence dia ${c.dia}${c.flexivel ? ' · <span class="tag-flex">pode mudar</span>' : ''}`, fmt(c.valor))).join('')
     || '<p class="vazio">Aluguel, luz, água, internet, escola...</p>';
   $('#lista-cartoes').innerHTML = resultado.cartoes.map((c) => {
     const orig = plano.cartoes.find((x) => x.id === c.id);
+    const parcelas = parcelasNoCartao(itens.filter((i) => i.tipo === 'divida'), orig.nome, hojeLocal().slice(0, 7));
     return linha(orig, esc(c.nome),
-      `Fecha dia ${orig.fechamento} · vence dia ${orig.vencimento}<br><span class="compra">🛍️ Melhor dia de compra: <b>dia ${(orig.fechamento % DIAS) + 1}</b> (até ${c.prazo} dias para pagar)</span>`,
+      `Fecha dia ${orig.fechamento} · vence dia ${orig.vencimento}<br><span class="compra">🛍️ Melhor dia de compra: <b>dia ${(orig.fechamento % DIAS) + 1}</b> (até ${c.prazo} dias para pagar)</span>` +
+      (parcelas ? `<br>🧾 Inclui ${fmt(parcelas)} em parcelas este mês` : ''),
       c.valor ? fmt(c.valor) : '');
   }).join('') || '<p class="vazio">Cadastre Nubank e Inter para saber o melhor dia de compra.</p>';
+
+  renderDividas();
 
   const aj = itens.find((i) => i.tipo === 'ajustes');
   const gv = aj?.gastoVariavel ?? null;
@@ -161,6 +175,46 @@ function renderListas(plano) {
   document.querySelectorAll('[data-editar]').forEach((b) => {
     b.onclick = () => { const it = itens.find((i) => i.id === Number(b.dataset.editar)); abrirEditor(it.tipo, it); };
   });
+}
+
+function renderDividas() {
+  const dividas = itens.filter((i) => i.tipo === 'divida');
+  const hoje = hojeLocal();
+  const r = resumoDividas(dividas, hoje);
+  const resumo = $('#resumo-dividas');
+  resumo.hidden = !dividas.length;
+  if (dividas.length) {
+    resumo.innerHTML = `
+      <div class="div-numeros">
+        <div><span class="rotulo">Falta pagar</span><b>${fmt(r.totalRestante)}</b></div>
+        <div><span class="rotulo">Parcelas este mês</span><b>${fmt(r.porMes)}</b></div>
+      </div>
+      ${r.proxima ? `<div class="div-proxima">${mascote('comemora')}<p>A próxima a acabar é <b>${esc(r.proxima.nome)}</b>, em <b>${mesAno(r.proxima.sit.fim)}</b>. Depois disso sobram <b class="positivo">${fmt(r.proxima.valor)}</b> a mais por mês.</p></div>` : ''}
+      <div class="div-meses" role="img" aria-label="Parcelas nos próximos meses">
+        ${r.proximosMeses.map((m) => {
+          const max = Math.max(...r.proximosMeses.map((x) => x.total), 1);
+          return `<div><span class="mes-valor">${m.total ? fmtCurto(m.total) : '—'}</span><i style="height:${Math.max(4, (m.total / max) * 56)}px"></i><small>${mesAno(m.mes).split('/')[0]}</small></div>`;
+        }).join('')}
+      </div>`;
+  }
+  const ordenadas = r.itens.sort((a, b) => (a.sit.quitada - b.sit.quitada) || a.sit.fim.localeCompare(b.sit.fim));
+  $('#lista-dividas').innerHTML = ordenadas.map((d) => {
+    const s = d.sit;
+    const status = s.quitada
+      ? '<span class="tag-quitada">Quitada 🎉</span>'
+      : s.pagas === 0 && s.parcelaDoMes < 1
+        ? `Começa em ${mesAno(d.inicio)}`
+        : `${s.pagas} de ${d.total} pagas · termina em ${mesAno(s.fim)}`;
+    return `<button class="item divida ${s.quitada ? 'quitada' : ''}" data-editar="${d.id}">
+      ${iconeItem(d)}
+      <span class="meio">
+        <span class="desc">${esc(d.nome)}</span>
+        <span class="meta multi">${status}<br>${esc(PAGAMENTOS[d.pagamento] || '')} · dia ${d.dia}</span>
+        <span class="progresso"><i style="width:${Math.round(s.progresso * 100)}%"></i></span>
+      </span>
+      <span class="valor">${fmt(d.valor)}<small>${s.quitada ? 'por mês' : `falta ${fmtCurto(s.valorRestante)}`}</small></span>
+    </button>`;
+  }).join('') || '<p class="vazio">Financiamentos, empréstimos, compras parceladas no carnê ou no cartão...</p>';
 }
 
 function linha(item, titulo, sub, valor, classeValor = '') {
@@ -197,6 +251,26 @@ const CAMPOS = {
     <label class="campo"><span>Valor médio da fatura</span><input name="valor" inputmode="decimal" placeholder="0,00" value="${i?.valor ? centavosTxt(i.valor) : ''}"></label>
     <label class="campo-check"><input type="checkbox" name="flexivel" ${i?.flexivel !== false ? 'checked' : ''}>
       <span>Posso mudar o vencimento<small>No app do Nubank e do Inter dá para trocar a data</small></span></label>`,
+  divida: (i) => {
+    const atual = i ? Math.min(Math.max(parcelaDoMes(i, hojeLocal().slice(0, 7)), 1), i.total) : 1;
+    return `
+    <h3>🧾 Dívida parcelada</h3>
+    <label class="campo"><span>Nome</span><input name="nome" placeholder="Ex.: Geladeira, Empréstimo, Celular" value="${esc(i?.nome || '')}" required autocomplete="off"></label>
+    <label class="campo"><span>Valor da parcela</span><input name="valor" inputmode="decimal" placeholder="0,00" value="${i ? centavosTxt(i.valor) : ''}" required></label>
+    <div class="campo-duplo">
+      <label class="campo"><span>Parcela deste mês</span><input name="parcelaAtual" type="number" min="1" max="240" inputmode="numeric" value="${atual}" required></label>
+      <span class="de">de</span>
+      <label class="campo"><span>Total de parcelas</span><input name="total" type="number" min="1" max="240" inputmode="numeric" value="${i?.total ?? 12}" required></label>
+    </div>
+    <p class="dica">Ex.: se este mês você paga a 4ª de 12, coloque 4 de 12. O app conta sozinho nos próximos meses.</p>
+    <label class="campo"><span>Dia do vencimento</span><input name="dia" type="number" min="1" max="31" inputmode="numeric" value="${i?.dia ?? 10}" required></label>
+    <label class="campo"><span>Como paga</span>
+      <select name="pagamento">${Object.entries(PAGAMENTOS).map(([v, t]) => `<option value="${v}" ${(i?.pagamento || 'boleto') === v ? 'selected' : ''}>${t}</option>`).join('')}</select></label>
+    <p class="dica">No cartão, a parcela já está dentro da fatura: o app só acompanha quanto falta. No boleto, ela entra no calendário do planejador.</p>
+    <label class="campo"><span>Categoria</span>
+      <select name="categoria">${Object.keys(CATS).filter((c) => !['A classificar', 'Salário'].includes(c))
+        .map((c) => `<option value="${esc(c)}" ${(i?.categoria || 'Compras') === c ? 'selected' : ''}>${cat(c).e} ${esc(c)}</option>`).join('')}</select></label>`;
+  },
   ajustes: (i) => `
     <h3>⚙️ Ajustes</h3>
     <label class="campo"><span>Quanto costuma ter na conta no dia 1</span><input name="saldoInicial" inputmode="decimal" placeholder="0,00" value="${i?.saldoInicial ? centavosTxt(i.saldoInicial) : ''}"></label>
@@ -225,6 +299,13 @@ $('#form-plano').addEventListener('submit', async (e) => {
   const f = e.target;
   const dados = { tipo: editando.tipo };
   for (const el of f.querySelectorAll('[name]')) dados[el.name] = el.type === 'checkbox' ? el.checked : el.value;
+  if (editando.tipo === 'divida') {
+    const atual = parseInt(dados.parcelaAtual, 10) || 1;
+    const total = parseInt(dados.total, 10) || 1;
+    if (atual > total) { $('#plano-erro').textContent = 'A parcela deste mês não pode ser maior que o total.'; $('#plano-erro').hidden = false; return; }
+    dados.inicio = inicioDe(atual, hojeLocal());
+    delete dados.parcelaAtual;
+  }
   try {
     const existente = editando.tipo === 'ajustes' ? itens.find((i) => i.tipo === 'ajustes') : editando.item;
     await salvarItem(dados, existente?.id);
