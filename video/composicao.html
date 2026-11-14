@@ -98,7 +98,7 @@
 <section class="cena claro" id="c5" style="background:var(--limao)">
   <div class="abs phone" id="c5-phone" style="left:220px;top:480px"><div class="tela"><div class="ilha"></div><img class="print" src="../public/midia/tela-categorias.jpg"></div></div>
   <div class="abs" id="c5-chips" style="left:0;top:0"></div>
-  <img class="abs mascote" id="c5-masc" src="../public/midia/mascote-pensando.webp" style="width:420px;left:680px;top:1440px">
+  <img class="abs mascote" id="c5-masc" src="../public/midia/mascote-pensando.webp" style="width:400px;left:640px;top:1360px">
   <div class="legenda" id="c5-leg" style="top:130px">Tudo separado por tipo. *Bem visual.*</div>
 </section>
 
@@ -140,8 +140,15 @@
   <img class="abs" id="c9-logo" src="../public/logo.png" style="width:900px;left:90px;top:560px">
   <img class="abs mascote" id="c9-m1" src="../public/midia/mascote-joinha.webp" style="width:470px;left:30px;top:1020px">
   <img class="abs mascote" id="c9-m2" src="../public/midia/mascote-comemora.webp" style="width:470px;left:580px;top:1020px">
-  <div class="legenda" id="c9-leg" style="top:1560px">Grátis. Simples. *Do casal.*</div>
+  <div class="legenda" id="c9-leg" style="top:1520px">Grátis. Simples. *Do casal.*</div>
 </section>
+
+<!-- Marca Desata: marca d'água no canto + assinatura no final -->
+<img id="desata-b" class="abs" src="marca/desata-branco.png" style="width:190px;right:56px;bottom:52px;z-index:100">
+<img id="desata-p" class="abs" src="marca/desata-preto.png" style="width:190px;right:56px;bottom:52px;z-index:100">
+<div id="assinatura" class="abs" style="left:0;right:0;top:1740px;z-index:101;display:flex;align-items:center;justify-content:center;gap:22px;color:rgba(255,255,255,.75);font:700 40px 'Inter Display'">
+  feito por <img src="marca/desata-branco.png" style="width:270px">
+</div>
 
 <script>
 // ---------- Utilidades de animação (tempo em segundos, totalmente determinístico) ----------
@@ -250,6 +257,14 @@ function render(t) {
     const p = i === 0 ? 1 : outCubic(prog(t, a, a + TRANS));
     el.style.clipPath = p >= 1 ? 'none' : `circle(${p * 1150}px at 50% 50%)`;
   });
+
+  // Marca Desata: branca nas cenas escuras, preta nas claras; some na assinatura final
+  const escuraAgora = ['c1', 'c3', 'c6', 'c9'].includes((CENAS.filter(([, a]) => t >= a).pop() || CENAS[0])[0]);
+  const mostra = prog(t, .8, 1.3) * (1 - prog(t, 33.4, 33.7));
+  set($('desata-b'), { o: escuraAgora ? mostra * .8 : 0 });
+  set($('desata-p'), { o: escuraAgora ? 0 : mostra * .75 });
+  const pa = prog(t, 35.2, 35.7);
+  set($('assinatura'), { y: lerp(40, 0, outBack(pa, 1.6)), o: pa });
 
   // 1. Abertura
   if (t < 3.2 + TRANS) {

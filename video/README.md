@@ -6,6 +6,7 @@ Vídeo vertical 9:16 (1080×1920, 37 s) feito com HTML animado gravado quadro a 
 - `render-video.cjs` — grava os quadros com Playwright e monta o MP4 com ffmpeg.
 - `render-quadros.cjs` — tira fotos de momentos específicos (conferência rápida).
 - `trilha.py` — trilha sonora original sintetizada (sem direitos de terceiros).
+- `marca/` — logo da Desata (branco e preto, fundo transparente) usado na marca d'água e na assinatura final.
 - `saida/pagaai-video.mp4` — vídeo final.
 
 Para gerar de novo:
