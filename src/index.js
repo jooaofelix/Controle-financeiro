@@ -1,7 +1,7 @@
 // Controle Financeiro — API (Cloudflare Worker + Durable Object com SQLite)
 import { DurableObject } from 'cloudflare:workers';
 import { paraCentavos } from './valores.js';
-// Os arquivos de /public são servidos automaticamente; aqui só chegam as rotas /api/*.
+import { ESTATICOS } from './estaticos.js';
 
 const CATEGORIAS = [
   'Mercado', 'Alimentação', 'Casa', 'Transporte', 'Saúde', 'Lazer',
@@ -79,10 +79,28 @@ export class Casa extends DurableObject {
 export default {
   async fetch(req, env) {
     const url = new URL(req.url);
-    if (!url.pathname.startsWith('/api/')) return new Response('Não encontrado', { status: 404 });
-    return env.CASA.get(env.CASA.idFromName('casa')).fetch(req);
+    if (url.pathname.startsWith('/api/')) return env.CASA.get(env.CASA.idFromName('casa')).fetch(req);
+    return arquivoEstatico(url.pathname);
   },
 };
+
+// ---------- Arquivos do app (HTML, CSS, JS, ícones) ----------
+const binarios = {};
+function arquivoEstatico(caminho) {
+  const nome = caminho === '/' ? '/index.html' : caminho;
+  const a = ESTATICOS[nome];
+  if (!a) return new Response('Não encontrado', { status: 404 });
+  let corpo = a.corpo;
+  if (a.base64) corpo = binarios[nome] ??= Uint8Array.from(atob(a.corpo), (c) => c.charCodeAt(0));
+  return new Response(corpo, {
+    headers: {
+      'Content-Type': a.tipo,
+      // HTML/JS/CSS sempre revalidam (atualizações chegam na hora); ícones podem ficar em cache
+      'Cache-Control': a.base64 || nome.endsWith('.svg') ? 'public, max-age=86400' : 'no-cache',
+      'X-Content-Type-Options': 'nosniff',
+    },
+  });
+}
 
 async function rotear(req, env, url) {
   const { pathname } = url;

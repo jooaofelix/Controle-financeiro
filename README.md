@@ -46,6 +46,8 @@ npm test               # testes do planejador
 
 ## Publicar (grátis)
 
+No ar em: https://controle-financeiro.desatasistemas.workers.dev
+
 ```bash
 npx wrangler login
 npm run deploy

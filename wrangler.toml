@@ -4,8 +4,10 @@ compatibility_date = "2025-04-01"
 account_id = "117e60056bd81bcde181d4733bb8886c"
 workers_dev = true
 
-[assets]
-directory = "./public"
+# Os arquivos de public/ são embutidos no Worker (src/estaticos.js)
+[build]
+command = "node scripts/embutir.mjs"
+watch_dir = "public"
 
 [vars]
 # Nomes que aparecem no app (separados por vírgula)
