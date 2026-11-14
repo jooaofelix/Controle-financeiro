@@ -1,6 +1,6 @@
-# Controle Financeiro da Casa
+# pagaAI
 
-App simples para o casal registrar e acompanhar os gastos da casa.
+As contas da casa, no dia certo. App simples para o casal registrar os gastos e planejar os vencimentos.
 
 ## Objetivos
 

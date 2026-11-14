@@ -42,8 +42,6 @@ async function iniciar() {
   }
   $('#tela-login').hidden = true;
   $('#tela-app').hidden = false;
-  const h = new Date().getHours();
-  $('#saudacao').textContent = (h < 12 ? 'Bom dia' : h < 18 ? 'Boa tarde' : 'Boa noite') + ' 👋';
   montarFormulario();
   await carregar();
 }

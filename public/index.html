@@ -3,14 +3,14 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <title>Finanças da Casa</title>
-  <meta name="theme-color" content="#f4f3ee" media="(prefers-color-scheme: light)">
-  <meta name="theme-color" content="#0f1512" media="(prefers-color-scheme: dark)">
+  <title>pagaAI</title>
+  <meta name="theme-color" content="#f4f4ef" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#0b0c0a" media="(prefers-color-scheme: dark)">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
-  <meta name="apple-mobile-web-app-title" content="Finanças">
+  <meta name="apple-mobile-web-app-title" content="pagaAI">
   <link rel="apple-touch-icon" href="/icon-180.png">
-  <link rel="icon" href="/icon.svg" type="image/svg+xml">
+  <link rel="icon" href="/icon-180.png" type="image/png">
   <link rel="manifest" href="/manifest.webmanifest">
   <link rel="stylesheet" href="/style.css">
 </head>
@@ -19,9 +19,8 @@
   <section id="tela-login" class="login" hidden>
     <form id="form-login" class="login-card">
       <div class="login-hero">
-        <img src="/icon.svg" alt="" width="64" height="64">
-        <h1>Finanças<br>da Casa</h1>
-        <p>Cada real da casa, num lugar só.</p>
+        <img src="/logo.png" alt="pagaAI" width="653" height="200">
+        <p>As contas da casa, no dia certo.</p>
       </div>
       <input id="senha" type="password" placeholder="Senha" autocomplete="current-password" required>
       <button class="btn-primario" type="submit">Entrar →</button>
@@ -33,10 +32,7 @@
   <main id="tela-app" hidden>
    <div id="pagina-inicio">
     <header class="topo">
-      <div>
-        <span class="saudacao" id="saudacao">Olá!</span>
-        <h1>Finanças da Casa</h1>
-      </div>
+      <h1 class="marca-topo"><img src="/logo.png" alt="pagaAI" width="653" height="200"></h1>
       <div class="seletor-mes">
         <button class="btn-icone" id="mes-ant" aria-label="Mês anterior">‹</button>
         <span id="mes-titulo"></span>
