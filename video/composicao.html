@@ -1,0 +1,382 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>pagaAI — vídeo de apresentação</title>
+<style>
+  :root { --preto: #0b0b0b; --limao: #c5f439; --creme: #f4f4ef; }
+  * { box-sizing: border-box; margin: 0; }
+  html, body { width: 1080px; height: 1920px; overflow: hidden; background: var(--preto); }
+  body { font-family: "Inter Display", "Inter", sans-serif; -webkit-font-smoothing: antialiased; }
+  .cena { position: absolute; inset: 0; overflow: hidden; visibility: hidden; }
+  .abs { position: absolute; will-change: transform, opacity; }
+  .legenda {
+    position: absolute; left: 70px; right: 70px; text-align: center;
+    font-weight: 900; font-size: 86px; line-height: 1.06; letter-spacing: -2.5px;
+  }
+  .legenda .p { display: inline-block; margin: 0 10px; transform-origin: 50% 80%; }
+  .legenda .hl { background: var(--preto); color: var(--limao); padding: 0 18px 6px; border-radius: 22px; }
+  .escuro .legenda { color: #fff; }
+  .escuro .legenda .hl { background: var(--limao); color: var(--preto); }
+  .claro .legenda { color: var(--preto); }
+  .mascote { filter: drop-shadow(0 18px 24px rgba(0,0,0,.25)); }
+  .escuro .mascote { filter: drop-shadow(3px 0 0 #f3f6ec) drop-shadow(-3px 0 0 #f3f6ec) drop-shadow(0 3px 0 #f3f6ec) drop-shadow(0 -3px 0 #f3f6ec) drop-shadow(0 20px 30px rgba(197,244,57,.25)); }
+  /* iPhone */
+  .phone {
+    width: 640px; height: 1350px; border-radius: 86px; background: #111; padding: 18px;
+    box-shadow: 0 50px 90px -30px rgba(0,0,0,.55), inset 0 0 0 3px #2a2a2a;
+  }
+  .phone .tela { width: 100%; height: 100%; border-radius: 70px; overflow: hidden; position: relative; background: #000; }
+  .phone .tela img.print { width: 100%; display: block; }
+  .phone .ilha { position: absolute; top: 18px; left: 50%; transform: translateX(-50%); width: 190px; height: 54px; border-radius: 30px; background: #000; z-index: 3; }
+  .faisca { position: absolute; left: 0; top: 0; width: 14px; border-radius: 7px; background: var(--limao); transform-origin: 50% 0; }
+  .chip {
+    display: flex; align-items: center; gap: 14px; padding: 18px 28px 18px 18px; border-radius: 30px;
+    font: 800 38px "Inter Display"; color: var(--preto); box-shadow: 0 16px 30px -10px rgba(0,0,0,.35);
+  }
+  .chip .em { font-size: 52px; width: 76px; height: 76px; display: grid; place-items: center; border-radius: 22px; background: rgba(255,255,255,.65); font-family: "Noto Color Emoji"; }
+  .card {
+    background: #fff; border-radius: 34px; padding: 26px 30px; width: 560px; box-shadow: 0 24px 50px -16px rgba(0,0,0,.4);
+    font-family: "Inter Display"; color: var(--preto);
+  }
+  .card b { font-size: 38px; font-weight: 800; display: block; }
+  .card small { font-size: 28px; color: #666; font-weight: 600; }
+  .card .barra { height: 18px; border-radius: 9px; background: #eef0e6; margin-top: 16px; overflow: hidden; }
+  .card .barra i { display: block; height: 100%; background: #6f9a00; border-radius: 9px; width: 0; }
+  .emoji { font-family: "Noto Color Emoji"; }
+</style>
+</head>
+<body>
+
+<!-- 1. Abertura -->
+<section class="cena escuro" id="c1">
+  <div class="abs" id="c1-glow" style="left:-300px;top:200px;width:1680px;height:1680px;border-radius:50%;background:radial-gradient(circle,rgba(197,244,57,.35),transparent 60%)"></div>
+  <div class="abs" id="c1-faiscas" style="left:540px;top:700px"></div>
+  <img class="abs" id="c1-logo" src="../public/logo.png" style="width:820px;left:130px;top:430px">
+  <img class="abs mascote" id="c1-masc" src="../public/midia/mascote-comemora.webp" style="width:560px;left:260px;top:820px">
+  <div class="legenda" id="c1-leg" style="top:1500px">As contas da casa, *no dia certo.*</div>
+</section>
+
+<!-- 2. Problema -->
+<section class="cena claro" id="c2" style="background:var(--creme)">
+  <div class="abs" id="c2-moedas" style="left:0;top:0;width:1080px;height:1920px"></div>
+  <img class="abs mascote" id="c2-masc" src="../public/midia/mascote-preocupado.webp" style="width:560px;left:260px;top:760px">
+  <div class="legenda" id="c2-leg" style="top:220px">Fim do mês chegou… e o dinheiro *sumiu?*</div>
+</section>
+
+<!-- 3. Pagou pelo celular -->
+<section class="cena escuro" id="c3" style="background:radial-gradient(circle at 50% 30%,#2f420b 0,#0b0b0b 65%)">
+  <!-- parte A: aproximação -->
+  <div class="abs" id="c3-maq" style="left:300px;top:1180px;width:480px;height:640px;border-radius:60px;background:#222;box-shadow:inset 0 0 0 6px #333">
+    <div style="position:absolute;left:50px;right:50px;top:60px;height:230px;border-radius:28px;background:#0f1a07;display:grid;place-items:center;color:var(--limao);font:900 66px 'Inter Display'">R$ 45,90</div>
+    <div style="position:absolute;left:0;right:0;top:340px;text-align:center;color:#bbb;font:800 120px 'Inter Display'">)))</div>
+  </div>
+  <div class="abs" id="c3-ondas" style="left:540px;top:1100px"></div>
+  <div class="abs" id="c3-ok" style="left:440px;top:960px;width:200px;height:200px;border-radius:50%;background:var(--limao);display:grid;place-items:center;font:900 130px 'Inter Display';color:var(--preto)">✓</div>
+  <div class="abs phone" id="c3-phone" style="left:220px;top:300px">
+    <div class="tela" style="background:radial-gradient(circle at 30% 20%,#3b5212 0,#1a2108 38%,#0b0b0b 75%)">
+      <div class="ilha"></div>
+      <div style="position:absolute;top:150px;width:100%;text-align:center;color:#e8f5c8;font:600 40px 'Inter Display'">sábado, 14 de novembro</div>
+      <div style="position:absolute;top:200px;width:100%;text-align:center;color:#fff;font:600 190px 'Inter Display';letter-spacing:-6px">19:42</div>
+      <img class="abs" id="c3-banner" src="../public/midia/notificacao.webp" style="width:620px;left:-8px;top:560px">
+    </div>
+  </div>
+  <img class="abs mascote" id="c3-masc" src="../public/midia/mascote-celular.webp" style="width:400px;left:660px;top:1120px">
+  <div class="legenda" id="c3-leg1" style="top:120px">Pagou pelo *celular?*</div>
+  <div class="legenda" id="c3-leg2" style="top:1590px;font-size:74px">O pagaAI *anota sozinho* e te avisa na hora.</div>
+</section>
+
+<!-- 4. Tela inicial -->
+<section class="cena claro" id="c4" style="background:var(--creme)">
+  <div class="abs" style="left:-200px;top:500px;width:1480px;height:1480px;border-radius:50%;background:radial-gradient(circle,rgba(197,244,57,.45),transparent 62%)"></div>
+  <div class="abs phone" id="c4-phone" style="left:300px;top:470px"><div class="tela"><div class="ilha"></div><img class="print" src="../public/midia/tela-inicio.jpg"></div></div>
+  <img class="abs mascote" id="c4-masc" src="../public/midia/mascote-oculos.webp" style="width:430px;left:-10px;top:1380px">
+  <div class="legenda" id="c4-leg" style="top:130px">Quanto gastaram, *quem gastou* e onde.</div>
+</section>
+
+<!-- 5. Categorias -->
+<section class="cena claro" id="c5" style="background:var(--limao)">
+  <div class="abs phone" id="c5-phone" style="left:220px;top:480px"><div class="tela"><div class="ilha"></div><img class="print" src="../public/midia/tela-categorias.jpg"></div></div>
+  <div class="abs" id="c5-chips" style="left:0;top:0"></div>
+  <img class="abs mascote" id="c5-masc" src="../public/midia/mascote-pensando.webp" style="width:420px;left:680px;top:1440px">
+  <div class="legenda" id="c5-leg" style="top:130px">Tudo separado por tipo. *Bem visual.*</div>
+</section>
+
+<!-- 6. Planejador -->
+<section class="cena escuro" id="c6" style="background:#0b0b0b">
+  <div class="abs" style="left:-300px;top:300px;width:1680px;height:1680px;border-radius:50%;background:radial-gradient(circle,rgba(197,244,57,.22),transparent 60%)"></div>
+  <div class="abs phone" id="c6-phone" style="left:220px;top:470px"><div class="tela"><div class="ilha"></div><img class="print" src="../public/midia/tela-calendario.jpg"></div></div>
+  <div class="abs chip" id="c6-dia" style="background:#ffd6d1">  <span class="em">💳</span>Fatura: dia 3</div>
+  <div class="abs" id="c6-saldo" style="left:90px;top:1560px;width:900px;padding:26px 30px;border-radius:30px;font:800 46px 'Inter Display';text-align:center"></div>
+  <img class="abs mascote" id="c6-masc" src="../public/midia/mascote-moeda.webp" style="width:380px;left:-20px;top:1180px">
+  <div class="legenda" id="c6-leg" style="top:130px">Ele sugere o *melhor dia* para cada conta.</div>
+</section>
+
+<!-- 7. Dívidas -->
+<section class="cena claro" id="c7" style="background:var(--creme)">
+  <div class="abs phone" id="c7-phone" style="left:380px;top:470px"><div class="tela"><div class="ilha"></div><img class="print" src="../public/midia/tela-dividas.jpg"></div></div>
+  <div class="abs card" id="c7-c1" style="left:50px;top:620px"><b>Geladeira</b><small>4 de 12 · termina jul/27</small><div class="barra"><i id="c7-b1"></i></div></div>
+  <div class="abs card" id="c7-c2" style="left:50px;top:880px"><b>Celular</b><small>6 de 10 · termina mar/27</small><div class="barra"><i id="c7-b2"></i></div></div>
+  <div class="abs card" id="c7-c3" style="left:50px;top:1140px"><b>Empréstimo</b><small>2 de 24 · termina set/28</small><div class="barra"><i id="c7-b3"></i></div></div>
+  <img class="abs mascote" id="c7-masc" src="../public/midia/mascote-recibo.webp" style="width:440px;left:40px;top:1400px">
+  <div class="legenda" id="c7-leg" style="top:130px">Parcelas sob controle: *quanto falta* e quando acaba.</div>
+</section>
+
+<!-- 8. Vence em breve -->
+<section class="cena claro" id="c8" style="background:var(--limao)">
+  <div class="abs" id="c8-linhas" style="left:0;top:0;width:1080px;height:1920px"></div>
+  <div class="abs card" id="c8-card" style="left:220px;top:700px;width:640px">
+    <small style="color:#6f9a00;font-weight:800;letter-spacing:1px">VENCE EM BREVE</small>
+    <b style="margin-top:6px">🧊 Geladeira 4/12</b><small>dia 16 · em 2 dias · R$ 250,00</small>
+  </div>
+  <img class="abs mascote" id="c8-masc" src="../public/midia/mascote-correndo.webp" style="width:600px;left:-700px;top:1030px">
+  <div class="legenda" id="c8-leg" style="top:240px">Nada de *esquecer* vencimento.</div>
+</section>
+
+<!-- 9. Final -->
+<section class="cena escuro" id="c9" style="background:#0b0b0b">
+  <div class="abs" id="c9-glow" style="left:-300px;top:120px;width:1680px;height:1680px;border-radius:50%;background:radial-gradient(circle,rgba(197,244,57,.38),transparent 60%)"></div>
+  <div class="abs" id="c9-confete" style="left:0;top:0;width:1080px;height:1920px"></div>
+  <img class="abs" id="c9-logo" src="../public/logo.png" style="width:900px;left:90px;top:560px">
+  <img class="abs mascote" id="c9-m1" src="../public/midia/mascote-joinha.webp" style="width:470px;left:30px;top:1020px">
+  <img class="abs mascote" id="c9-m2" src="../public/midia/mascote-comemora.webp" style="width:470px;left:580px;top:1020px">
+  <div class="legenda" id="c9-leg" style="top:1560px">Grátis. Simples. *Do casal.*</div>
+</section>
+
+<script>
+// ---------- Utilidades de animação (tempo em segundos, totalmente determinístico) ----------
+const DUR = 37;
+const clamp = (v, a = 0, b = 1) => Math.min(b, Math.max(a, v));
+const prog = (t, a, b) => clamp((t - a) / (b - a));
+const lerp = (a, b, p) => a + (b - a) * p;
+const outCubic = (p) => 1 - Math.pow(1 - p, 3);
+const inOutCubic = (p) => p < .5 ? 4 * p * p * p : 1 - Math.pow(-2 * p + 2, 3) / 2;
+const outBack = (p, s = 1.9) => 1 + (s + 1) * Math.pow(p - 1, 3) + s * Math.pow(p - 1, 2);
+const outElastic = (p) => p === 0 ? 0 : p === 1 ? 1 : Math.pow(2, -10 * p) * Math.sin((p * 10 - .75) * (2 * Math.PI / 3)) + 1;
+let semente = 7;
+const rnd = () => (semente = (semente * 16807) % 2147483647) / 2147483647;
+const $ = (id) => document.getElementById(id);
+function set(el, { x = 0, y = 0, s = 1, sx, sy, r = 0, o = 1, ry = 0 } = {}) {
+  el.style.transform = `perspective(1600px) translate(${x}px,${y}px) rotate(${r}deg) rotateY(${ry}deg) scale(${sx ?? s},${sy ?? s})`;
+  el.style.opacity = o;
+}
+// Mascote: entra pulando (de baixo), aterrissa com "squash" e fica balançando
+function mascote(el, t, t0, { de = 500, flutua = 14, gira = 3, freq = 1.3 } = {}) {
+  const p = prog(t, t0, t0 + .55);
+  const y = lerp(de, 0, outBack(p, 1.6));
+  const pouso = prog(t, t0 + .4, t0 + .75);
+  const sq = Math.sin(pouso * Math.PI) * .12;
+  const viva = t > t0 + .6 ? 1 : 0;
+  set(el, {
+    y: y + viva * Math.sin((t - t0) * Math.PI * 2 * freq) * flutua,
+    r: viva * Math.sin((t - t0) * Math.PI * 2 * freq * .5) * gira,
+    sx: 1 + sq, sy: 1 - sq, o: p > 0 ? 1 : 0,
+  });
+}
+// Legendas: palavras entram uma a uma com "pop"; *texto* vira destaque
+function prepararLegendas() {
+  document.querySelectorAll('.legenda').forEach((el) => {
+    const partes = el.textContent.split(/(\*[^*]+\*)/).filter(Boolean);
+    el.innerHTML = '';
+    partes.forEach((parte) => {
+      const hl = parte.startsWith('*');
+      const txt = hl ? parte.slice(1, -1) : parte;
+      if (hl) { const s = document.createElement('span'); s.className = 'p hl'; s.textContent = txt; el.append(s); }
+      else txt.split(/\s+/).filter(Boolean).forEach((w) => { const s = document.createElement('span'); s.className = 'p'; s.textContent = w; el.append(s); });
+    });
+  });
+}
+function legenda(el, t, t0, { sai } = {}) {
+  [...el.children].forEach((w, i) => {
+    const p = prog(t, t0 + i * .07, t0 + i * .07 + .45);
+    const ps = sai ? prog(t, sai, sai + .3) : 0;
+    set(w, { y: lerp(60, 0, outBack(p)) - ps * 40, s: lerp(.4, 1, outBack(p)), o: Math.min(p * 3, 1) * (1 - ps) });
+  });
+}
+function celular(el, t, t0, { de = 1200, rot = -6, gira = 25 } = {}) {
+  const p = prog(t, t0, t0 + .8);
+  const e = outBack(p, 1.3);
+  set(el, { x: lerp(de, 0, e), r: lerp(18, rot, e), ry: lerp(gira, 0, e), y: Math.sin(t * 2.2) * 10, o: p > 0 ? 1 : 0 });
+}
+
+// ---------- Elementos gerados ----------
+function criar() {
+  prepararLegendas();
+  const f = $('c1-faiscas');
+  for (let i = 0; i < 18; i++) { const d = document.createElement('div'); d.className = 'faisca'; d.dataset.a = i * 20; f.append(d); }
+  const m = $('c2-moedas');
+  for (let i = 0; i < 22; i++) {
+    const d = document.createElement('div'); d.className = 'abs emoji';
+    d.textContent = ['💸', '🪙', '💵', '🪙'][i % 4];
+    d.style.fontSize = (70 + rnd() * 60) + 'px';
+    Object.assign(d.dataset, { x: 540 + (rnd() - .5) * 200, y: 1150, vx: (rnd() - .5) * 1500, vy: -900 - rnd() * 900, t0: 3.6 + rnd() * 2.2, rot: (rnd() - .5) * 720 });
+    m.append(d);
+  }
+  const ondas = $('c3-ondas');
+  for (let i = 0; i < 3; i++) { const d = document.createElement('div'); d.className = 'abs'; d.style.cssText = 'left:-150px;top:-150px;width:300px;height:300px;border-radius:50%;border:12px solid #c5f439'; ondas.append(d); }
+  const chips = [['🛒', 'Mercado', '#cfe0fb', 60, 360], ['🍔', 'Alimentação', '#fbd9c7', 640, 470], ['🚗', 'Transporte', '#fbe8b7', 30, 820], ['🏠', 'Casa', '#c6efe0', 700, 900], ['💊', 'Saúde', '#f9d5e3', 60, 1240], ['📺', 'Assinaturas', '#ddd8fb', 610, 1260]];
+  const c = $('c5-chips');
+  chips.forEach(([e, n, bg, x, y], i) => {
+    const d = document.createElement('div'); d.className = 'abs chip';
+    d.style.cssText = `left:${x}px;top:${y}px;background:${bg}`;
+    d.innerHTML = `<span class="em">${e}</span>${n}`; d.dataset.i = i; c.append(d);
+  });
+  const l = $('c8-linhas');
+  for (let i = 0; i < 14; i++) { const d = document.createElement('div'); d.className = 'abs'; d.style.cssText = `height:10px;border-radius:5px;background:#0b0b0b;opacity:.18;top:${300 + rnd() * 1500}px;width:${200 + rnd() * 380}px`; d.dataset.v = 1800 + rnd() * 1600; d.dataset.o = rnd() * 1080; l.append(d); }
+  const cf = $('c9-confete');
+  for (let i = 0; i < 60; i++) {
+    const d = document.createElement('div'); d.className = 'abs';
+    const cor = ['#c5f439', '#ffffff', '#f6a6c4', '#ffd84d', '#9ad8ff'][i % 5];
+    d.style.cssText = `width:${16 + rnd() * 18}px;height:${26 + rnd() * 20}px;border-radius:5px;background:${cor}`;
+    Object.assign(d.dataset, { x: rnd() * 1080, v: 500 + rnd() * 700, t0: 33.7 + rnd() * 1.2, w: (rnd() - .5) * 8, g: rnd() * 360 });
+    cf.append(d);
+  }
+}
+
+// ---------- Cenas ----------
+const CENAS = [
+  ['c1', 0, 3.2], ['c2', 3.2, 7], ['c3', 7, 13.4], ['c4', 13.4, 17.4], ['c5', 17.4, 21.4],
+  ['c6', 21.4, 26.4], ['c7', 26.4, 30.4], ['c8', 30.4, 33.4], ['c9', 33.4, DUR],
+];
+const TRANS = .45;
+
+function render(t) {
+  CENAS.forEach(([id, a, b], i) => {
+    const el = $(id);
+    const visivel = t >= a && t < b + TRANS;
+    el.style.visibility = visivel ? 'visible' : 'hidden';
+    el.style.zIndex = i;
+    // entrada em círculo que se abre a partir do centro
+    const p = i === 0 ? 1 : outCubic(prog(t, a, a + TRANS));
+    el.style.clipPath = p >= 1 ? 'none' : `circle(${p * 1150}px at 50% 50%)`;
+  });
+
+  // 1. Abertura
+  if (t < 3.2 + TRANS) {
+    const g = $('c1-glow'); set(g, { s: 1 + Math.sin(t * 3) * .06, o: prog(t, 0, .5) });
+    [...$('c1-faiscas').children].forEach((d) => {
+      const p = prog(t, .15, .9);
+      d.style.height = (outCubic(p) * 160 * (1 - prog(t, .7, 1.3))) + 'px';
+      d.style.transform = `rotate(${d.dataset.a}deg) translateY(${150 + outCubic(p) * 260}px)`;
+      d.style.opacity = 1 - prog(t, .9, 1.4);
+    });
+    const pl = prog(t, .3, 1.3);
+    set($('c1-logo'), { s: lerp(.2, 1, outElastic(pl)), o: Math.min(pl * 4, 1), y: Math.sin(t * 2) * 6 });
+    mascote($('c1-masc'), t, .9, { de: 900, flutua: 20, gira: 5, freq: 1.8 });
+    legenda($('c1-leg'), t, 1.5);
+  }
+  // 2. Problema
+  if (t >= 3.2 && t < 7 + TRANS) {
+    [...$('c2-moedas').children].forEach((d) => {
+      const lt = t - Number(d.dataset.t0);
+      if (lt < 0) { d.style.opacity = 0; return; }
+      set(d, { x: Number(d.dataset.x) + d.dataset.vx * lt, y: Number(d.dataset.y) + d.dataset.vy * lt + 900 * lt * lt, r: d.dataset.rot * lt, o: 1 - prog(lt, 1.1, 1.5) });
+    });
+    const el = $('c2-masc'); mascote(el, t, 3.5, { de: 700 });
+    const tremor = t > 4.2 ? Math.sin(t * 60) * 4 : 0;
+    el.style.transform += ` translateX(${tremor}px)`;
+    legenda($('c2-leg'), t, 3.8);
+  }
+  // 3. Pagou pelo celular
+  if (t >= 7 && t < 13.4 + TRANS) {
+    const ph = $('c3-phone');
+    const desce = inOutCubic(prog(t, 7.4, 8.4));
+    const sobe = inOutCubic(prog(t, 9.2, 9.9));
+    const zoom = inOutCubic(prog(t, 10.9, 11.7));
+    set(ph, { y: lerp(-180, 60, desce) * (1 - sobe) + lerp(0, -20, zoom), s: .55 + sobe * .45 + zoom * .6, r: lerp(-12, 0, desce), o: 1 });
+    set($('c3-maq'), { y: lerp(200, 0, outBack(prog(t, 7.1, 7.7))) + sobe * 900, o: 1 - sobe });
+    [...$('c3-ondas').children].forEach((d, i) => {
+      const p = prog(t, 8.3 + i * .18, 8.3 + i * .18 + .7);
+      set(d, { s: lerp(.3, 2.4, outCubic(p)), o: p > 0 && p < 1 ? (1 - p) : 0 });
+    });
+    const pk = prog(t, 8.55, 8.95);
+    set($('c3-ok'), { s: outBack(pk, 2.5) * (1 - prog(t, 9.1, 9.4)), o: pk > 0 ? 1 - prog(t, 9.1, 9.4) : 0 });
+    const pb = prog(t, 9.9, 10.5);
+    set($('c3-banner'), { y: lerp(-700, 0, outBack(pb, 1.4)), o: pb > 0 ? 1 : 0, s: 1 + Math.sin(prog(t, 10.5, 10.8) * Math.PI) * .04 });
+    const pm = prog(t, 10.3, 10.9);
+    set($('c3-masc'), { x: lerp(500, 0, outBack(pm, 1.5)), r: lerp(30, -8, outCubic(pm)) + Math.sin(t * 4) * 3, y: Math.sin(t * 3) * 10, o: pm > 0 ? 1 : 0 });
+    legenda($('c3-leg1'), t, 7.3, { sai: 9.6 });
+    legenda($('c3-leg2'), t, 11.2);
+  }
+  // 4. Tela inicial
+  if (t >= 13.4 && t < 17.4 + TRANS) {
+    celular($('c4-phone'), t, 13.6, { rot: 5, gira: -30 });
+    mascote($('c4-masc'), t, 14.3, { de: 600, gira: 2, freq: 1 });
+    legenda($('c4-leg'), t, 13.9);
+  }
+  // 5. Categorias
+  if (t >= 17.4 && t < 21.4 + TRANS) {
+    celular($('c5-phone'), t, 17.5, { de: -1200, rot: -4, gira: 30 });
+    [...$('c5-chips').children].forEach((d) => {
+      const i = Number(d.dataset.i); const p = prog(t, 18.3 + i * .22, 18.3 + i * .22 + .5);
+      set(d, { s: outBack(p, 2.2), r: (i % 2 ? 6 : -6) + Math.sin(t * 2 + i) * 3, y: Math.sin(t * 2.4 + i) * 12, o: p > 0 ? 1 : 0 });
+    });
+    mascote($('c5-masc'), t, 18.8, { de: 600, gira: 6, freq: .9 });
+    legenda($('c5-leg'), t, 17.8);
+  }
+  // 6. Planejador
+  if (t >= 21.4 && t < 26.4 + TRANS) {
+    celular($('c6-phone'), t, 21.5, { rot: 3, gira: -25 });
+    const pc = prog(t, 22.4, 22.8), mv = inOutCubic(prog(t, 23.3, 24.4));
+    const dia = $('c6-dia');
+    dia.innerHTML = `<span class="em">💳</span>Fatura: dia ${mv < .5 ? 3 : 21}`;
+    dia.style.background = mv < .5 ? '#ffd6d1' : '#c5f439';
+    // trajetória em arco do dia 3 até o dia 21
+    const x = lerp(560, 380, mv), y = lerp(760, 1180, mv) - Math.sin(mv * Math.PI) * 260;
+    dia.style.left = x + 'px'; dia.style.top = y + 'px';
+    set(dia, { s: outBack(pc, 2) * (1 + Math.sin(mv * Math.PI) * .15), r: Math.sin(mv * Math.PI) * -10, o: pc > 0 ? 1 : 0 });
+    const ps = prog(t, 24.2, 24.7), verde = prog(t, 24.4, 24.9);
+    const sl = $('c6-saldo');
+    sl.style.background = verde > .5 ? '#c5f439' : '#ff6b5b';
+    sl.style.color = '#0b0b0b';
+    sl.textContent = verde > .5 ? 'Menor saldo do mês: R$ 257 ✓' : 'Menor saldo do mês: −R$ 2.243';
+    set(sl, { y: lerp(200, 0, outBack(ps, 1.4)), s: 1 + Math.sin(verde * Math.PI) * .08, o: ps > 0 ? 1 : 0 });
+    mascote($('c6-masc'), t, 22, { de: 600, gira: 4 });
+    legenda($('c6-leg'), t, 21.8);
+  }
+  // 7. Dívidas
+  if (t >= 26.4 && t < 30.4 + TRANS) {
+    celular($('c7-phone'), t, 26.5, { rot: 6, gira: -30 });
+    [['c7-c1', 'c7-b1', 33], ['c7-c2', 'c7-b2', 60], ['c7-c3', 'c7-b3', 8]].forEach(([c, b, pct], i) => {
+      const p = prog(t, 27.1 + i * .3, 27.1 + i * .3 + .5);
+      set($(c), { x: lerp(-700, 0, outBack(p, 1.3)), r: -3 + Math.sin(t * 2 + i) * 1.5, o: p > 0 ? 1 : 0 });
+      $(b).style.width = (outCubic(prog(t, 27.6 + i * .3, 28.8 + i * .3)) * pct) + '%';
+    });
+    mascote($('c7-masc'), t, 28.2, { de: 600, gira: 5, freq: 1.6 });
+    legenda($('c7-leg'), t, 26.8);
+  }
+  // 8. Vence em breve
+  if (t >= 30.4 && t < 33.4 + TRANS) {
+    [...$('c8-linhas').children].forEach((d) => {
+      const x = (Number(d.dataset.o) - (t - 30.4) * d.dataset.v) % 1500;
+      d.style.transform = `translateX(${x < -600 ? x + 1500 : x}px)`;
+    });
+    const pc = prog(t, 30.7, 31.2);
+    set($('c8-card'), { s: outBack(pc, 2), r: Math.sin(t * 3) * 2, o: pc > 0 ? 1 : 0 });
+    const pm = prog(t, 30.9, 33.2);
+    const mm = $('c8-masc');
+    set(mm, { x: lerp(0, 2400, pm), y: -Math.abs(Math.sin(t * 9)) * 50, r: Math.sin(t * 9) * 4, o: 1 });
+    legenda($('c8-leg'), t, 30.7);
+  }
+  // 9. Final
+  if (t >= 33.4) {
+    set($('c9-glow'), { s: 1 + Math.sin(t * 3) * .07, o: 1 });
+    const pl = prog(t, 33.6, 34.6);
+    set($('c9-logo'), { s: lerp(.2, 1, outElastic(pl)), o: Math.min(pl * 4, 1), y: Math.sin(t * 2) * 8 });
+    mascote($('c9-m1'), t, 34.2, { de: 700, gira: 5, freq: 1.4 });
+    mascote($('c9-m2'), t, 34.4, { de: 700, gira: 6, freq: 1.8 });
+    [...$('c9-confete').children].forEach((d) => {
+      const lt = t - Number(d.dataset.t0);
+      if (lt < 0) { d.style.opacity = 0; return; }
+      set(d, { x: Number(d.dataset.x) + Math.sin(lt * 3 + Number(d.dataset.w)) * 60, y: -80 + lt * d.dataset.v, r: Number(d.dataset.g) + lt * 300, o: 1 });
+    });
+    legenda($('c9-leg'), t, 34.6);
+  }
+}
+
+window.DUR = DUR;
+window.render = render;
+window.pronto = Promise.all([...document.images].map((i) => i.decode().catch(() => {}))).then(() => { criar(); render(0); return true; });
+</script>
+</body>
+</html>
