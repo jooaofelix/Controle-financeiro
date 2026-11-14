@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Finanças da Casa</title>
+  <meta name="theme-color" content="#0f766e">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="Finanças">
+  <link rel="apple-touch-icon" href="/icon-180.png">
+  <link rel="icon" href="/icon.svg" type="image/svg+xml">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <!-- Login -->
+  <section id="tela-login" class="login" hidden>
+    <form id="form-login" class="card login-card">
+      <img src="/icon.svg" alt="" width="56" height="56">
+      <h1>Finanças da Casa</h1>
+      <input id="senha" type="password" placeholder="Senha" autocomplete="current-password" required>
+      <button class="btn-primario" type="submit">Entrar</button>
+      <p id="erro-login" class="erro" hidden></p>
+    </form>
+  </section>
+
+  <!-- App -->
+  <main id="tela-app" hidden>
+    <header class="topo">
+      <button class="btn-icone" id="mes-ant" aria-label="Mês anterior">‹</button>
+      <h1 id="mes-titulo"></h1>
+      <button class="btn-icone" id="mes-prox" aria-label="Próximo mês">›</button>
+    </header>
+
+    <section class="card resumo">
+      <span class="rotulo">Gastos do mês</span>
+      <strong id="total-gastos" class="grande">R$ 0,00</strong>
+      <div class="linha-resumo">
+        <div><span class="rotulo">Entradas</span><b id="total-receitas" class="positivo">R$ 0,00</b></div>
+        <div><span class="rotulo">Saldo</span><b id="saldo">R$ 0,00</b></div>
+      </div>
+      <div id="por-pessoa" class="por-pessoa"></div>
+    </section>
+
+    <button id="aviso-classificar" class="aviso" hidden></button>
+
+    <section class="card">
+      <h2>Por categoria</h2>
+      <div id="por-categoria" class="barras"></div>
+    </section>
+
+    <section>
+      <h2 class="titulo-lista">Lançamentos</h2>
+      <div id="lista"></div>
+    </section>
+
+    <button id="btn-novo" class="fab" aria-label="Novo lançamento">+</button>
+  </main>
+
+  <!-- Formulário (bottom sheet) -->
+  <dialog id="dlg">
+    <form id="form" class="folha" method="dialog">
+      <div class="seg" role="radiogroup">
+        <label><input type="radio" name="tipo" value="despesa" checked><span>Gasto</span></label>
+        <label><input type="radio" name="tipo" value="receita"><span>Entrada</span></label>
+      </div>
+      <label class="campo-valor">
+        <span>R$</span>
+        <input name="valor" inputmode="decimal" placeholder="0,00" autocomplete="off" required>
+      </label>
+      <input name="descricao" placeholder="Descrição (ex.: Mercado do mês)" maxlength="120">
+      <span class="rotulo">Categoria</span>
+      <div class="chips" id="chips-categoria"></div>
+      <span class="rotulo">Quem</span>
+      <div class="chips" id="chips-pessoa"></div>
+      <span class="rotulo">Conta</span>
+      <div class="chips" id="chips-conta"></div>
+      <input name="data" type="date" required>
+      <p id="erro-form" class="erro" hidden></p>
+      <div class="acoes">
+        <button type="button" id="btn-excluir" class="btn-perigo" hidden>Excluir</button>
+        <button type="button" id="btn-cancelar" class="btn-sec">Cancelar</button>
+        <button type="submit" class="btn-primario">Salvar</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script src="/app.js" type="module"></script>
+</body>
+</html>

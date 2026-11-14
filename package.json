@@ -1,0 +1,13 @@
+{
+  "name": "controle-financeiro",
+  "private": true,
+  "scripts": {
+    "dev": "wrangler dev",
+    "db:local": "wrangler d1 execute financas --local --file schema.sql",
+    "db:remote": "wrangler d1 execute financas --remote --file schema.sql",
+    "deploy": "wrangler deploy"
+  },
+  "devDependencies": {
+    "wrangler": "3.114.0"
+  }
+}

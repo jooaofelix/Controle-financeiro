@@ -1,0 +1,15 @@
+name = "controle-financeiro"
+main = "src/index.js"
+compatibility_date = "2025-01-01"
+
+[assets]
+directory = "./public"
+
+[vars]
+# Nomes que aparecem no app (separados por vírgula)
+PESSOAS = "Marido,Esposa"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "financas"
+database_id = "COLOQUE_O_ID_AQUI"
