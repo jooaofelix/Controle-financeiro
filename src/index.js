@@ -270,11 +270,14 @@ async function exigirLogin(req, env) {
 // ---------- Atalho do iPhone ----------
 
 async function atalho(req, env) {
-  const auth = (req.headers.get('Authorization') || '').replace(/^Bearer\s+/i, '');
+  const auth = (req.headers.get('Authorization') || '').trim().replace(/^Bearer\s+/i, '').trim();
   if (!env.SENHA || !iguais(auth, env.SENHA)) throw erro(401, 'Senha inválida');
 
-  const b = await req.json().catch(() => null);
-  if (!b) throw erro(400, 'Corpo JSON inválido');
+  const bruto = await req.json().catch(() => null);
+  if (!bruto || typeof bruto !== 'object') throw erro(400, 'Corpo JSON inválido');
+  // Aceita chaves com maiúscula, acento ou espaço ("Valor", "Cartão ") — o teclado do iPhone muda sozinho
+  const chave = (k) => k.normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toLowerCase();
+  const b = Object.fromEntries(Object.entries(bruto).map(([k, v]) => [chave(k), typeof v === 'string' ? v.trim() : v]));
 
   const valor = paraCentavos(b.valor);
   if (!valor) throw erro(400, 'Valor inválido');
