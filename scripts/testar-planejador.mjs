@@ -102,3 +102,70 @@ teste('ganho pequeno (R$ 3) não vira sugestão', () => {
   assert.equal(r.sugestoes.length, 0);
 });
 console.log(`${ok} testes passaram no total`);
+
+// ---------- Dívidas parceladas ----------
+const D = await import('../public/dividas.js');
+const geladeira = { id: 1, nome: 'Geladeira', valor: R(250), total: 12, inicio: '2026-08', dia: 10, pagamento: 'boleto', categoria: 'Casa' };
+
+teste('meses: soma e diferença com virada de ano', () => {
+  assert.equal(D.somaMeses('2026-11', 3), '2027-02');
+  assert.equal(D.somaMeses('2027-01', -2), '2026-11');
+  assert.equal(D.mesesEntre('2026-08', '2027-07'), 11);
+  assert.equal(D.mesAno('2027-03'), 'mar/27');
+});
+
+teste('parcela atual informada vira mês de início', () => {
+  assert.equal(D.inicioDe(4, '2026-11-14'), '2026-08');
+  assert.equal(D.inicioDe(1, '2026-11-14'), '2026-11');
+});
+
+teste('situação antes e depois do vencimento do mês', () => {
+  const antes = D.situacao(geladeira, '2026-11-05');   // parcela 4 vence dia 10
+  assert.equal(antes.pagas, 3);
+  assert.equal(antes.restantes, 9);
+  assert.equal(antes.valorRestante, R(2250));
+  assert.equal(antes.fim, '2027-07');
+  const depois = D.situacao(geladeira, '2026-11-10');
+  assert.equal(depois.pagas, 4);
+  assert.ok(depois.ativaNoMes);
+});
+
+teste('dívida quitada e dívida que ainda não começou', () => {
+  const q = D.situacao(geladeira, '2027-07-20');
+  assert.ok(q.quitada);
+  assert.equal(q.restantes, 0);
+  const futura = D.situacao({ ...geladeira, inicio: '2027-01' }, '2026-11-14');
+  assert.equal(futura.pagas, 0);
+  assert.equal(futura.restantes, 12);
+  assert.ok(!futura.ativaNoMes);
+});
+
+teste('vencimento dia 31 em mês curto conta como vencido no último dia', () => {
+  const d = { ...geladeira, dia: 31, inicio: '2027-02' };
+  assert.equal(D.situacao(d, '2027-02-28').pagas, 1);
+});
+
+teste('resumo: total restante, por mês, próxima a acabar e meses seguintes', () => {
+  const celular = { id: 2, nome: 'Celular', valor: R(150), total: 10, inicio: '2026-06', dia: 5, pagamento: 'Nubank', categoria: 'Compras' };
+  const r = D.resumoDividas([geladeira, celular], '2026-11-14');
+  assert.equal(r.abertas, 2);
+  assert.equal(r.porMes, R(400));
+  assert.equal(r.proxima.nome, 'Celular');            // termina em mar/27, antes da geladeira
+  assert.equal(r.proxima.sit.fim, '2027-03');
+  assert.equal(r.totalRestante, R(250) * 8 + R(150) * 4);
+  assert.equal(r.proximosMeses[4].mes, '2027-03');
+  assert.equal(r.proximosMeses[4].total, R(400));
+  assert.equal(r.proximosMeses[5].total, R(250));     // abr/27: só a geladeira
+});
+
+teste('boleto vira conta no planejador; cartão soma na fatura', () => {
+  const celular = { id: 2, nome: 'Celular', valor: R(150), total: 10, inicio: '2026-06', dia: 5, pagamento: 'Nubank' };
+  const contas = D.contasDoMes([geladeira, celular], '2026-11');
+  assert.equal(contas.length, 1);
+  assert.equal(contas[0].nome, 'Geladeira 4/12');
+  assert.equal(contas[0].flexivel, false);
+  assert.equal(D.parcelasNoCartao([geladeira, celular], 'Nubank', '2026-11'), R(150));
+  assert.equal(D.parcelasNoCartao([geladeira, celular], 'Nubank', '2027-04'), 0);
+});
+
+console.log(`${ok} testes passaram no total (com dívidas)`);
