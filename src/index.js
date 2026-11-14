@@ -71,7 +71,9 @@ export class Casa extends DurableObject {
     try {
       return await rotear(req, { ...this.env, DB: this.db }, url);
     } catch (e) {
-      return json({ erro: e.message || 'Erro interno' }, e.status || 500);
+      const msg = e.message || 'Erro interno';
+      // `mensagem` é o texto pronto para a notificação do Atalho do iPhone
+      return json({ erro: msg, mensagem: `⚠️ pagaAI não anotou: ${msg}` }, e.status || 500);
     }
   }
 }
@@ -287,8 +289,22 @@ async function atalho(req, env) {
     `INSERT INTO transacoes (data, valor, tipo, categoria, pessoa, conta, descricao, origem)
      VALUES (?, ?, 'despesa', ?, ?, ?, ?, 'atalho') RETURNING *`
   ).bind(data, valor, categoria, pessoa, conta, estabelecimento).first();
-  return json({ ok: true, id: r.id, categoria, valor: r.valor / 100 }, 201);
+
+  // Texto pronto para a notificação no iPhone
+  const { total } = await env.DB.prepare(
+    `SELECT COALESCE(SUM(valor), 0) AS total FROM transacoes WHERE tipo='despesa' AND substr(data,1,7) = ?`
+  ).bind(data.slice(0, 7)).first();
+  const onde = estabelecimento ? ` em ${estabelecimento}` : '';
+  const linha1 = categoria === 'A classificar'
+    ? `📝 Anotado: ${reais(valor)}${onde}. Abra o pagaAI para escolher a categoria.`
+    : `✅ Anotado: ${reais(valor)}${onde} (${categoria})`;
+  const mensagem = `${linha1}\nGastos de ${NOMES_MES[Number(data.slice(5, 7)) - 1]}: ${reais(total)}`;
+
+  return json({ ok: true, id: r.id, categoria, valor: r.valor / 100, mensagem }, 201);
 }
+
+const NOMES_MES = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'];
+const reais = (centavos) => 'R$ ' + (centavos / 100).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 function categorizar(texto) {
   for (const [re, cat] of REGRAS_CATEGORIA) if (re.test(texto)) return cat;
