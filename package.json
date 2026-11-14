@@ -3,13 +3,13 @@
   "private": true,
   "scripts": {
     "dev": "wrangler dev",
-    "db:local": "wrangler d1 execute financas --local --file schema.sql",
-    "db:remote": "wrangler d1 execute financas --remote --file schema.sql",
     "deploy": "wrangler deploy",
-    "marcas": "node scripts/gerar-marcas.mjs"
+    "marcas": "node scripts/gerar-marcas.mjs",
+    "test": "node scripts/testar-planejador.mjs"
   },
   "devDependencies": {
-    "simple-icons": "^13.21.0",
+    "simple-icons": "13.21.0",
     "wrangler": "3.114.0"
-  }
+  },
+  "type": "module"
 }

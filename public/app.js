@@ -1,29 +1,8 @@
-import { MARCAS } from '/marcas.js';
+import {
+  $, fmt, esc, api, aoDeslogar, CATS, cat, corCat, marcaDe, iconeMarca, iconeCategoria, MARCAS,
+} from '/comum.js';
+import { abrirPlano } from '/plano.js';
 
-const $ = (s) => document.querySelector(s);
-const brl = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' });
-const fmt = (centavos) => brl.format(centavos / 100);
-
-// Ícone e cor de cada categoria (cores definidas no style.css)
-const CATS = {
-  'Mercado':       { e: '🛒', c: 'mercado' },
-  'Alimentação':   { e: '🍔', c: 'alimentacao' },
-  'Casa':          { e: '🏠', c: 'casa' },
-  'Transporte':    { e: '🚗', c: 'transporte' },
-  'Saúde':         { e: '💊', c: 'saude' },
-  'Lazer':         { e: '🎉', c: 'lazer' },
-  'Assinaturas':   { e: '📺', c: 'assinaturas' },
-  'Compras':       { e: '🛍️', c: 'compras' },
-  'Educação':      { e: '📚', c: 'outros' },
-  'Salário':       { e: '💰', c: 'outros' },
-  'Outros':        { e: '📦', c: 'outros' },
-  'A classificar': { e: '❓', c: 'outros' },
-};
-const cat = (nome) => CATS[nome] || CATS['Outros'];
-const corCat = (nome) => `var(--c-${cat(nome).c})`;
-
-const MARCAS_RE = MARCAS.map((m) => ({ ...m, rx: new RegExp(m.re, 'i') }));
-const marcaDe = (texto) => (texto ? MARCAS_RE.find((m) => m.rx.test(texto)) : null);
 const MARCA_CONTA = { Nubank: 'nubank', Inter: 'inter' };
 
 let config = null;
@@ -33,23 +12,8 @@ let totalMesAnterior = 0;
 let filtroCat = null;
 let editandoId = null;
 
-// ---------- API ----------
-async function api(caminho, opcoes = {}) {
-  const r = await fetch(caminho, {
-    ...opcoes,
-    headers: { 'Content-Type': 'application/json', ...(opcoes.headers || {}) },
-    credentials: 'same-origin',
-  });
-  if (r.status === 401 && caminho !== '/api/login') {
-    mostrarLogin();
-    throw new Error('Faça login');
-  }
-  const dados = await r.json().catch(() => ({}));
-  if (!r.ok) throw new Error(dados.erro || 'Erro ' + r.status);
-  return dados;
-}
-
 // ---------- Login ----------
+aoDeslogar(mostrarLogin);
 function mostrarLogin() {
   $('#tela-app').hidden = true;
   $('#tela-login').hidden = false;
@@ -111,22 +75,6 @@ $('#mes-ant').onclick = () => { mes = mesDeslocado(mes, -1); filtroCat = null; c
 $('#mes-prox').onclick = () => { mes = mesDeslocado(mes, 1); filtroCat = null; carregar(); };
 
 // ---------- Ícones ----------
-function corTexto(hex) {
-  const [r, g, b] = [0, 2, 4].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255);
-  return 0.2126 * r + 0.7152 * g + 0.0722 * b > 0.6 ? '#141414' : '#ffffff';
-}
-
-function iconeMarca(m, classe = '') {
-  const miolo = m.path
-    ? `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="${m.path}"/></svg>`
-    : `<b>${esc(m.sigla)}</b>`;
-  return `<span class="icone marca ${classe}" style="--mc:#${m.cor};--mt:${corTexto(m.cor)}" title="${esc(m.nome)}">${miolo}</span>`;
-}
-
-function iconeCategoria(nome, classe = '') {
-  return `<span class="icone ${classe}" style="--c:${corCat(nome)}" aria-hidden="true">${cat(nome).e}</span>`;
-}
-
 function iconeTransacao(t, classe = '') {
   const m = marcaDe(t.descricao);
   return m ? iconeMarca(m, classe) : iconeCategoria(t.categoria, classe);
@@ -335,9 +283,6 @@ $('#btn-excluir').onclick = async () => {
 function pct(v, total) { return total ? Math.round((v / total) * 100) : 0; }
 function soma(lista) { return lista.reduce((s, t) => s + t.valor, 0); }
 function maiuscula(s) { return s.charAt(0).toUpperCase() + s.slice(1); }
-function esc(s) {
-  return String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
-}
 function hojeLocal() {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -352,5 +297,17 @@ function rotuloDia(iso) {
 }
 function lsGet(k) { try { return localStorage.getItem('cf_' + k); } catch { return null; } }
 function lsSet(k, v) { try { localStorage.setItem('cf_' + k, v); } catch {} }
+
+// ---------- Abas ----------
+const abas = document.querySelectorAll('[data-aba]');
+abas.forEach((b) => { b.onclick = () => mostrarAba(b.dataset.aba); });
+function mostrarAba(aba) {
+  $('#pagina-inicio').hidden = aba !== 'inicio';
+  $('#pagina-plano').hidden = aba !== 'plano';
+  abas.forEach((b) => b.classList.toggle('ativa', b.dataset.aba === aba));
+  window.scrollTo(0, 0);
+  if (aba === 'plano') abrirPlano(config).catch(() => {});
+  else carregar();
+}
 
 iniciar();

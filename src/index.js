@@ -1,4 +1,6 @@
-// Controle Financeiro — API (Cloudflare Worker + D1)
+// Controle Financeiro — API (Cloudflare Worker + Durable Object com SQLite)
+import { DurableObject } from 'cloudflare:workers';
+import { paraCentavos } from './valores.js';
 // Os arquivos de /public são servidos automaticamente; aqui só chegam as rotas /api/*.
 
 const CATEGORIAS = [
@@ -18,15 +20,67 @@ const REGRAS_CATEGORIA = [
   [/cinema|ingresso|steam|playstation|xbox|teatro/i, 'Lazer'],
 ];
 
-export default {
-  async fetch(req, env) {
+// Banco de dados: um Durable Object com SQLite (incluso no plano grátis).
+// Todas as rotas /api/* rodam dentro dele, numa única instância "casa".
+const SCHEMA = [
+  `CREATE TABLE IF NOT EXISTS transacoes (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    data       TEXT    NOT NULL,                    -- YYYY-MM-DD
+    valor      INTEGER NOT NULL,                    -- centavos, sempre positivo
+    tipo       TEXT    NOT NULL DEFAULT 'despesa',  -- 'despesa' | 'receita'
+    categoria  TEXT    NOT NULL DEFAULT 'A classificar',
+    pessoa     TEXT    NOT NULL,
+    conta      TEXT    NOT NULL DEFAULT '',
+    descricao  TEXT    NOT NULL DEFAULT '',
+    origem     TEXT    NOT NULL DEFAULT 'manual',   -- 'manual' | 'atalho'
+    criado_em  TEXT    NOT NULL DEFAULT CURRENT_TIMESTAMP
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_transacoes_data ON transacoes(data)`,
+  // Planejador: salários, contas fixas, cartões e ajustes (dados em JSON)
+  `CREATE TABLE IF NOT EXISTS plano (
+    id    INTEGER PRIMARY KEY AUTOINCREMENT,
+    tipo  TEXT NOT NULL,   -- 'renda' | 'conta' | 'cartao' | 'ajustes'
+    dados TEXT NOT NULL
+  )`,
+];
+
+// Adaptador com a mesma interface do D1 (prepare/bind/all/first/run)
+function bancoSql(sql) {
+  return {
+    prepare(query) {
+      let args = [];
+      const stmt = {
+        bind: (...a) => { args = a; return stmt; },
+        all: async () => ({ results: sql.exec(query, ...args).toArray() }),
+        first: async () => sql.exec(query, ...args).toArray()[0] ?? null,
+        run: async () => { sql.exec(query, ...args); return { success: true }; },
+      };
+      return stmt;
+    },
+  };
+}
+
+export class Casa extends DurableObject {
+  constructor(ctx, env) {
+    super(ctx, env);
+    for (const s of SCHEMA) ctx.storage.sql.exec(s);
+    this.db = bancoSql(ctx.storage.sql);
+  }
+  async fetch(req) {
     const url = new URL(req.url);
     try {
-      if (!url.pathname.startsWith('/api/')) return new Response('Não encontrado', { status: 404 });
-      return await rotear(req, env, url);
+      return await rotear(req, { ...this.env, DB: this.db }, url);
     } catch (e) {
       return json({ erro: e.message || 'Erro interno' }, e.status || 500);
     }
+  }
+}
+
+export default {
+  async fetch(req, env) {
+    const url = new URL(req.url);
+    if (!url.pathname.startsWith('/api/')) return new Response('Não encontrado', { status: 404 });
+    return env.CASA.get(env.CASA.idFromName('casa')).fetch(req);
   },
 };
 
@@ -76,7 +130,88 @@ async function rotear(req, env, url) {
     await env.DB.prepare(`DELETE FROM transacoes WHERE id=?`).bind(Number(mId[1])).run();
     return json({ ok: true });
   }
+
+  // ---------- Planejador ----------
+  if (pathname === '/api/plano' && m === 'GET') {
+    const { results } = await env.DB.prepare(`SELECT * FROM plano ORDER BY id`).all();
+    const itens = results.map((r) => ({ id: r.id, tipo: r.tipo, ...JSON.parse(r.dados) }));
+    return json({ itens, gastoVariavel: await gastoVariavelMedio(env) });
+  }
+  if (pathname === '/api/plano' && m === 'POST') {
+    const { tipo, dados } = validarPlano(await req.json());
+    const r = await env.DB.prepare(`INSERT INTO plano (tipo, dados) VALUES (?, ?) RETURNING id`)
+      .bind(tipo, JSON.stringify(dados)).first();
+    return json({ id: r.id, tipo, ...dados }, 201);
+  }
+  const mPlano = pathname.match(/^\/api\/plano\/(\d+)$/);
+  if (mPlano && m === 'PUT') {
+    const { tipo, dados } = validarPlano(await req.json());
+    const r = await env.DB.prepare(`UPDATE plano SET tipo=?, dados=? WHERE id=? RETURNING id`)
+      .bind(tipo, JSON.stringify(dados), Number(mPlano[1])).first();
+    if (!r) throw erro(404, 'Item não encontrado');
+    return json({ id: r.id, tipo, ...dados });
+  }
+  if (mPlano && m === 'DELETE') {
+    await env.DB.prepare(`DELETE FROM plano WHERE id=?`).bind(Number(mPlano[1])).run();
+    return json({ ok: true });
+  }
   throw erro(404, 'Rota não encontrada');
+}
+
+// Gasto do dia a dia (mercado, iFood, Uber...) = média dos 2 últimos meses fechados,
+// sem contar Casa (aluguel/contas), que já entram como contas fixas no planejador.
+async function gastoVariavelMedio(env) {
+  const hoje = hojeSP();
+  const [a, m] = hoje.slice(0, 7).split('-').map(Number);
+  const mesStr = (d) => `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
+  const meses = [mesStr(new Date(Date.UTC(a, m - 2, 1))), mesStr(new Date(Date.UTC(a, m - 3, 1)))];
+  const { results } = await env.DB.prepare(
+    `SELECT substr(data,1,7) AS mes, SUM(valor) AS total FROM transacoes
+     WHERE tipo='despesa' AND categoria NOT IN ('Casa','Assinaturas') AND substr(data,1,7) IN (?, ?)
+     GROUP BY mes`
+  ).bind(...meses).all();
+  if (!results.length) return { porMes: 0, meses: 0 };
+  return { porMes: Math.round(results.reduce((s, r) => s + r.total, 0) / results.length), meses: results.length };
+}
+
+function validarPlano(b) {
+  const tipo = b?.tipo;
+  const dia = (v) => Math.min(31, Math.max(1, parseInt(v, 10) || 1));
+  const texto = (v, n = 60) => String(v ?? '').trim().slice(0, n);
+  if (tipo === 'renda') {
+    const valor = paraCentavos(b.valor);
+    if (!valor) throw erro(400, 'Informe o valor');
+    return { tipo, dados: { descricao: texto(b.descricao) || 'Salário', pessoa: texto(b.pessoa, 40), valor, dia: dia(b.dia) } };
+  }
+  if (tipo === 'conta') {
+    const valor = paraCentavos(b.valor);
+    if (!valor) throw erro(400, 'Informe o valor');
+    if (!texto(b.nome)) throw erro(400, 'Informe o nome da conta');
+    return { tipo, dados: {
+      nome: texto(b.nome), valor, dia: dia(b.dia), flexivel: !!b.flexivel,
+      categoria: CATEGORIAS.includes(b.categoria) ? b.categoria : 'Casa',
+    } };
+  }
+  if (tipo === 'cartao') {
+    if (!texto(b.nome)) throw erro(400, 'Informe o cartão');
+    return { tipo, dados: {
+      nome: texto(b.nome, 40), fechamento: dia(b.fechamento), vencimento: dia(b.vencimento),
+      valor: paraCentavos(b.valor), flexivel: b.flexivel !== false,
+    } };
+  }
+  if (tipo === 'ajustes') {
+    return { tipo, dados: {
+      saldoInicial: paraCentavosComSinal(b.saldoInicial),
+      gastoVariavel: b.gastoVariavel === '' || b.gastoVariavel == null ? null : paraCentavos(b.gastoVariavel),
+    } };
+  }
+  throw erro(400, 'Tipo inválido');
+}
+
+function paraCentavosComSinal(v) {
+  const neg = /^\s*-/.test(String(v ?? ''));
+  const c = paraCentavos(v);
+  return neg ? -c : c;
 }
 
 // ---------- Autenticação (senha única da casa) ----------
@@ -150,16 +285,6 @@ function normalizarConta(cartao) {
 }
 
 // ---------- Utilidades ----------
-
-// Aceita 52.9, "52,90", "R$ 1.234,56", "R$52.90"
-export function paraCentavos(v) {
-  if (typeof v === 'number') return Number.isFinite(v) && v > 0 ? Math.round(v * 100) : 0;
-  let s = String(v ?? '').replace(/[^\d,.-]/g, '');
-  if (s.includes(',')) s = s.replace(/\./g, '').replace(',', '.');
-  else if ((s.match(/\./g) || []).length > 1) s = s.replace(/\./g, '');
-  const n = Math.abs(parseFloat(s));
-  return Number.isFinite(n) && n > 0 ? Math.round(n * 100) : 0;
-}
 
 function hojeSP() {
   // Data de hoje no fuso de Brasília

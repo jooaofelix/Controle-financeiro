@@ -1,6 +1,8 @@
 name = "controle-financeiro"
 main = "src/index.js"
-compatibility_date = "2025-01-01"
+compatibility_date = "2025-04-01"
+account_id = "117e60056bd81bcde181d4733bb8886c"
+workers_dev = true
 
 [assets]
 directory = "./public"
@@ -9,7 +11,11 @@ directory = "./public"
 # Nomes que aparecem no app (separados por vírgula)
 PESSOAS = "Marido,Esposa"
 
-[[d1_databases]]
-binding = "DB"
-database_name = "financas"
-database_id = "COLOQUE_O_ID_AQUI"
+# Banco de dados: Durable Object com SQLite (plano grátis)
+[[durable_objects.bindings]]
+name = "CASA"
+class_name = "Casa"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["Casa"]

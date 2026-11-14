@@ -31,6 +31,7 @@
 
   <!-- App -->
   <main id="tela-app" hidden>
+   <div id="pagina-inicio">
     <header class="topo">
       <div>
         <span class="saudacao" id="saudacao">Olá!</span>
@@ -78,7 +79,89 @@
       <div id="lista"></div>
     </section>
 
-    <button id="btn-novo" class="fab" aria-label="Novo lançamento"><span>+</span></button>
+   </div>
+
+   <!-- ================= Planejar ================= -->
+   <div id="pagina-plano" hidden>
+    <header class="topo">
+      <div>
+        <span class="saudacao">Planejador de contas</span>
+        <h1>Melhores datas</h1>
+      </div>
+      <button class="btn-icone btn-ajustes" id="btn-ajustes" aria-label="Ajustes">⚙️</button>
+    </header>
+
+    <section id="plano-vazio" class="card boas-vindas" hidden>
+      <div class="bv-emoji">📅</div>
+      <h2>Vamos organizar as datas?</h2>
+      <p>Cadastre o dia em que cai o salário de cada um, as contas fixas e os cartões. O app simula o saldo do mês e sugere os melhores dias de vencimento.</p>
+      <div class="bv-passos">
+        <button class="btn-primario" data-novo="renda">💰 Adicionar salário</button>
+        <button class="btn-sec" data-novo="conta">📄 Adicionar conta fixa</button>
+        <button class="btn-sec" data-novo="cartao">💳 Adicionar cartão</button>
+      </div>
+    </section>
+
+    <div id="plano-conteudo">
+      <section class="hero">
+        <div class="hero-topo"><span>Sobra prevista no mês</span></div>
+        <strong id="plano-sobra" class="hero-valor">R$ 0,00</strong>
+        <div class="hero-linha tres">
+          <div><span>Salários</span><b id="plano-renda"></b></div>
+          <div><span>Contas fixas</span><b id="plano-fixas"></b></div>
+          <div><span>Dia a dia</span><b id="plano-variavel"></b></div>
+        </div>
+        <p id="plano-minimo" class="hero-rodape"></p>
+      </section>
+
+      <div id="plano-alertas"></div>
+
+      <section class="card">
+        <div class="card-titulo">
+          <h2>Calendário do mês</h2>
+          <div class="seg seg-mini" id="cal-modo" hidden>
+            <label><input type="radio" name="calmodo" value="hoje"><span>Hoje</span></label>
+            <label><input type="radio" name="calmodo" value="sug" checked><span>Sugerido</span></label>
+          </div>
+        </div>
+        <div class="cal-legenda"><span><i class="lg-salario"></i>Salário</span><span><i class="lg-neg"></i>Saldo negativo</span><span><i class="lg-movido"></i>Data sugerida</span></div>
+        <div id="calendario" class="calendario"></div>
+        <div id="cal-detalhe" class="cal-detalhe"></div>
+      </section>
+
+      <section class="card">
+        <div class="card-titulo"><h2>💡 Sugestões</h2></div>
+        <div id="sugestoes"></div>
+      </section>
+
+      <section class="card">
+        <div class="card-titulo"><h2>Salários</h2><button class="btn-add" data-novo="renda">+ Adicionar</button></div>
+        <div id="lista-rendas" class="lista-plano"></div>
+      </section>
+
+      <section class="card">
+        <div class="card-titulo"><h2>Contas fixas</h2><button class="btn-add" data-novo="conta">+ Adicionar</button></div>
+        <div id="lista-contas" class="lista-plano"></div>
+      </section>
+
+      <section class="card">
+        <div class="card-titulo"><h2>Cartões</h2><button class="btn-add" data-novo="cartao">+ Adicionar</button></div>
+        <div id="lista-cartoes" class="lista-plano"></div>
+      </section>
+
+      <section class="card ajustes-resumo">
+        <div><span class="rotulo">Na conta no dia 1</span><b id="ajuste-saldo"></b></div>
+        <div><span class="rotulo">Dia a dia por mês</span><b id="ajuste-variavel"></b><small id="ajuste-variavel-origem" class="sutil"></small></div>
+      </section>
+    </div>
+   </div>
+
+    <!-- Barra de navegação -->
+    <nav class="abas">
+      <button class="aba ativa" data-aba="inicio"><span>🏠</span>Início</button>
+      <button id="btn-novo" class="fab" aria-label="Novo lançamento"><span>+</span></button>
+      <button class="aba" data-aba="plano"><span>📅</span>Planejar</button>
+    </nav>
   </main>
 
   <!-- Formulário (bottom sheet) -->
@@ -108,6 +191,20 @@
       <div class="acoes">
         <button type="button" id="btn-excluir" class="btn-perigo" hidden>Excluir</button>
         <button type="button" id="btn-cancelar" class="btn-sec">Cancelar</button>
+        <button type="submit" class="btn-primario">Salvar</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Editor do planejador -->
+  <dialog id="dlg-plano">
+    <form id="form-plano" class="folha" method="dialog">
+      <div class="puxador"></div>
+      <div id="plano-campos" class="plano-campos"></div>
+      <p id="plano-erro" class="erro" hidden></p>
+      <div class="acoes">
+        <button type="button" id="plano-excluir" class="btn-perigo" hidden>Excluir</button>
+        <button type="button" id="plano-cancelar" class="btn-sec">Cancelar</button>
         <button type="submit" class="btn-primario">Salvar</button>
       </div>
     </form>
