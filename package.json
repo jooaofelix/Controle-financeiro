@@ -5,9 +5,11 @@
     "dev": "wrangler dev",
     "db:local": "wrangler d1 execute financas --local --file schema.sql",
     "db:remote": "wrangler d1 execute financas --remote --file schema.sql",
-    "deploy": "wrangler deploy"
+    "deploy": "wrangler deploy",
+    "marcas": "node scripts/gerar-marcas.mjs"
   },
   "devDependencies": {
+    "simple-icons": "^13.21.0",
     "wrangler": "3.114.0"
   }
 }

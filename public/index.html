@@ -4,7 +4,8 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>Finanças da Casa</title>
-  <meta name="theme-color" content="#0f766e">
+  <meta name="theme-color" content="#f4f3ee" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#0f1512" media="(prefers-color-scheme: dark)">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <meta name="apple-mobile-web-app-title" content="Finanças">
@@ -16,11 +17,14 @@
 <body>
   <!-- Login -->
   <section id="tela-login" class="login" hidden>
-    <form id="form-login" class="card login-card">
-      <img src="/icon.svg" alt="" width="56" height="56">
-      <h1>Finanças da Casa</h1>
+    <form id="form-login" class="login-card">
+      <div class="login-hero">
+        <img src="/icon.svg" alt="" width="64" height="64">
+        <h1>Finanças<br>da Casa</h1>
+        <p>Cada real da casa, num lugar só.</p>
+      </div>
       <input id="senha" type="password" placeholder="Senha" autocomplete="current-password" required>
-      <button class="btn-primario" type="submit">Entrar</button>
+      <button class="btn-primario" type="submit">Entrar →</button>
       <p id="erro-login" class="erro" hidden></p>
     </form>
   </section>
@@ -28,39 +32,59 @@
   <!-- App -->
   <main id="tela-app" hidden>
     <header class="topo">
-      <button class="btn-icone" id="mes-ant" aria-label="Mês anterior">‹</button>
-      <h1 id="mes-titulo"></h1>
-      <button class="btn-icone" id="mes-prox" aria-label="Próximo mês">›</button>
+      <div>
+        <span class="saudacao" id="saudacao">Olá!</span>
+        <h1>Finanças da Casa</h1>
+      </div>
+      <div class="seletor-mes">
+        <button class="btn-icone" id="mes-ant" aria-label="Mês anterior">‹</button>
+        <span id="mes-titulo"></span>
+        <button class="btn-icone" id="mes-prox" aria-label="Próximo mês">›</button>
+      </div>
     </header>
 
-    <section class="card resumo">
-      <span class="rotulo">Gastos do mês</span>
-      <strong id="total-gastos" class="grande">R$ 0,00</strong>
-      <div class="linha-resumo">
-        <div><span class="rotulo">Entradas</span><b id="total-receitas" class="positivo">R$ 0,00</b></div>
-        <div><span class="rotulo">Saldo</span><b id="saldo">R$ 0,00</b></div>
+    <!-- Cartão verde principal -->
+    <section class="hero">
+      <div class="hero-topo">
+        <span id="hero-rotulo">Gasto no mês</span>
+        <span id="comparativo" class="pilula" hidden></span>
       </div>
-      <div id="por-pessoa" class="por-pessoa"></div>
+      <strong id="total-gastos" class="hero-valor">R$ 0,00</strong>
+      <div class="hero-linha">
+        <div><span>Entradas</span><b id="total-receitas">R$ 0,00</b></div>
+        <div><span>Saldo</span><b id="saldo">R$ 0,00</b></div>
+      </div>
+      <div id="por-pessoa" class="hero-pessoas"></div>
     </section>
 
     <button id="aviso-classificar" class="aviso" hidden></button>
 
+    <!-- Para onde foi o dinheiro -->
     <section class="card">
-      <h2>Por categoria</h2>
-      <div id="por-categoria" class="barras"></div>
+      <div class="card-titulo">
+        <h2>Para onde foi</h2>
+        <span class="sutil" id="qtd-categorias"></span>
+      </div>
+      <div id="barra-categorias" class="barra-segmentada" role="img"></div>
+      <div id="grade-categorias" class="grade-categorias"></div>
     </section>
 
+    <!-- Lançamentos -->
     <section>
-      <h2 class="titulo-lista">Lançamentos</h2>
+      <div class="lista-titulo">
+        <h2>Lançamentos</h2>
+        <button id="filtro-ativo" class="filtro" hidden></button>
+      </div>
       <div id="lista"></div>
     </section>
 
-    <button id="btn-novo" class="fab" aria-label="Novo lançamento">+</button>
+    <button id="btn-novo" class="fab" aria-label="Novo lançamento"><span>+</span></button>
   </main>
 
   <!-- Formulário (bottom sheet) -->
   <dialog id="dlg">
     <form id="form" class="folha" method="dialog">
+      <div class="puxador"></div>
       <div class="seg" role="radiogroup">
         <label><input type="radio" name="tipo" value="despesa" checked><span>Gasto</span></label>
         <label><input type="radio" name="tipo" value="receita"><span>Entrada</span></label>
@@ -69,11 +93,14 @@
         <span>R$</span>
         <input name="valor" inputmode="decimal" placeholder="0,00" autocomplete="off" required>
       </label>
-      <input name="descricao" placeholder="Descrição (ex.: Mercado do mês)" maxlength="120">
+      <div class="campo-desc">
+        <span id="desc-icone" class="icone icone-p"></span>
+        <input name="descricao" placeholder="Descrição (ex.: iFood, Mercado)" maxlength="120" autocomplete="off">
+      </div>
       <span class="rotulo">Categoria</span>
-      <div class="chips" id="chips-categoria"></div>
+      <div class="grade-escolha" id="chips-categoria"></div>
       <span class="rotulo">Quem</span>
-      <div class="chips" id="chips-pessoa"></div>
+      <div class="seg" id="chips-pessoa"></div>
       <span class="rotulo">Conta</span>
       <div class="chips" id="chips-conta"></div>
       <input name="data" type="date" required>

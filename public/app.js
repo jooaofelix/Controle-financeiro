@@ -1,10 +1,36 @@
+import { MARCAS } from '/marcas.js';
+
 const $ = (s) => document.querySelector(s);
 const brl = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' });
 const fmt = (centavos) => brl.format(centavos / 100);
 
+// Ícone e cor de cada categoria (cores definidas no style.css)
+const CATS = {
+  'Mercado':       { e: '🛒', c: 'mercado' },
+  'Alimentação':   { e: '🍔', c: 'alimentacao' },
+  'Casa':          { e: '🏠', c: 'casa' },
+  'Transporte':    { e: '🚗', c: 'transporte' },
+  'Saúde':         { e: '💊', c: 'saude' },
+  'Lazer':         { e: '🎉', c: 'lazer' },
+  'Assinaturas':   { e: '📺', c: 'assinaturas' },
+  'Compras':       { e: '🛍️', c: 'compras' },
+  'Educação':      { e: '📚', c: 'outros' },
+  'Salário':       { e: '💰', c: 'outros' },
+  'Outros':        { e: '📦', c: 'outros' },
+  'A classificar': { e: '❓', c: 'outros' },
+};
+const cat = (nome) => CATS[nome] || CATS['Outros'];
+const corCat = (nome) => `var(--c-${cat(nome).c})`;
+
+const MARCAS_RE = MARCAS.map((m) => ({ ...m, rx: new RegExp(m.re, 'i') }));
+const marcaDe = (texto) => (texto ? MARCAS_RE.find((m) => m.rx.test(texto)) : null);
+const MARCA_CONTA = { Nubank: 'nubank', Inter: 'inter' };
+
 let config = null;
 let mes = hojeLocal().slice(0, 7);
 let transacoes = [];
+let totalMesAnterior = 0;
+let filtroCat = null;
 let editandoId = null;
 
 // ---------- API ----------
@@ -52,101 +78,197 @@ async function iniciar() {
   }
   $('#tela-login').hidden = true;
   $('#tela-app').hidden = false;
-  montarChips();
+  const h = new Date().getHours();
+  $('#saudacao').textContent = (h < 12 ? 'Bom dia' : h < 18 ? 'Boa tarde' : 'Boa noite') + ' 👋';
+  montarFormulario();
   await carregar();
 }
 
+function mesDeslocado(base, delta) {
+  const [a, m] = base.split('-').map(Number);
+  const d = new Date(a, m - 1 + delta, 1);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+}
+function nomeMes(ym, opts = { month: 'long' }) {
+  const [a, m] = ym.split('-').map(Number);
+  return new Date(a, m - 1, 1).toLocaleDateString('pt-BR', opts).replace('.', '');
+}
+
 async function carregar() {
-  const [a, m] = mes.split('-').map(Number);
-  $('#mes-titulo').textContent = maiuscula(new Date(a, m - 1, 1).toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' }));
-  transacoes = await api('/api/transacoes?mes=' + mes);
+  const ano = mes.slice(0, 4) !== hojeLocal().slice(0, 4) ? ' ' + mes.slice(2, 4) : '';
+  $('#mes-titulo').textContent = maiuscula(nomeMes(mes, { month: 'short' })) + ano;
+  $('#hero-rotulo').textContent = 'Gasto em ' + nomeMes(mes);
+  const [atual, anterior] = await Promise.all([
+    api('/api/transacoes?mes=' + mes),
+    api('/api/transacoes?mes=' + mesDeslocado(mes, -1)).catch(() => []),
+  ]);
+  transacoes = atual;
+  totalMesAnterior = soma(anterior.filter((t) => t.tipo === 'despesa'));
   render();
 }
 
-function mudarMes(delta) {
-  const [a, m] = mes.split('-').map(Number);
-  const d = new Date(a, m - 1 + delta, 1);
-  mes = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-  carregar();
+$('#mes-ant').onclick = () => { mes = mesDeslocado(mes, -1); filtroCat = null; carregar(); };
+$('#mes-prox').onclick = () => { mes = mesDeslocado(mes, 1); filtroCat = null; carregar(); };
+
+// ---------- Ícones ----------
+function corTexto(hex) {
+  const [r, g, b] = [0, 2, 4].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255);
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b > 0.6 ? '#141414' : '#ffffff';
 }
-$('#mes-ant').onclick = () => mudarMes(-1);
-$('#mes-prox').onclick = () => mudarMes(1);
+
+function iconeMarca(m, classe = '') {
+  const miolo = m.path
+    ? `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="${m.path}"/></svg>`
+    : `<b>${esc(m.sigla)}</b>`;
+  return `<span class="icone marca ${classe}" style="--mc:#${m.cor};--mt:${corTexto(m.cor)}" title="${esc(m.nome)}">${miolo}</span>`;
+}
+
+function iconeCategoria(nome, classe = '') {
+  return `<span class="icone ${classe}" style="--c:${corCat(nome)}" aria-hidden="true">${cat(nome).e}</span>`;
+}
+
+function iconeTransacao(t, classe = '') {
+  const m = marcaDe(t.descricao);
+  return m ? iconeMarca(m, classe) : iconeCategoria(t.categoria, classe);
+}
 
 // ---------- Render ----------
 function render() {
   const gastos = transacoes.filter((t) => t.tipo === 'despesa');
   const totalG = soma(gastos);
   const totalR = soma(transacoes.filter((t) => t.tipo === 'receita'));
-  const saldo = totalR - totalG;
 
   $('#total-gastos').textContent = fmt(totalG);
   $('#total-receitas').textContent = fmt(totalR);
-  $('#saldo').textContent = fmt(saldo);
-  $('#saldo').className = saldo < 0 ? 'negativo' : 'positivo';
+  $('#saldo').textContent = fmt(totalR - totalG);
+
+  // Comparativo com o mês anterior
+  const comp = $('#comparativo');
+  if (totalMesAnterior > 0 && totalG > 0) {
+    const p = Math.round(((totalG - totalMesAnterior) / totalMesAnterior) * 100);
+    comp.textContent = `${p > 0 ? '▲' : p < 0 ? '▼' : '='} ${Math.abs(p)}% vs ${nomeMes(mesDeslocado(mes, -1), { month: 'short' })}`;
+    comp.hidden = false;
+  } else comp.hidden = true;
 
   // Por pessoa
-  $('#por-pessoa').innerHTML = config.pessoas
-    .map((p) => `<span>${esc(p)}: <b>${fmt(soma(gastos.filter((t) => t.pessoa === p)))}</b></span>`)
-    .join('');
+  $('#por-pessoa').innerHTML = config.pessoas.map((p) => `
+    <div class="pessoa">
+      <span class="avatar">${esc(p.charAt(0).toUpperCase())}</span>
+      <div><small>${esc(p)}</small><b>${fmt(soma(gastos.filter((t) => t.pessoa === p)))}</b></div>
+    </div>`).join('');
 
   // A classificar
   const pend = gastos.filter((t) => t.categoria === 'A classificar');
   const aviso = $('#aviso-classificar');
   aviso.hidden = pend.length === 0;
-  aviso.textContent = `⚠️ ${pend.length} ${pend.length === 1 ? 'gasto' : 'gastos'} do iPhone sem categoria — toque para classificar`;
+  aviso.textContent = `❓ ${pend.length} ${pend.length === 1 ? 'gasto chegou' : 'gastos chegaram'} do iPhone sem categoria — toque para classificar`;
   aviso.onclick = () => pend[0] && abrirForm(pend[0]);
 
-  // Por categoria
+  renderCategorias(gastos, totalG);
+  renderLista();
+}
+
+function renderCategorias(gastos, totalG) {
   const porCat = {};
   for (const t of gastos) porCat[t.categoria] = (porCat[t.categoria] || 0) + t.valor;
   const cats = Object.entries(porCat).sort((a, b) => b[1] - a[1]);
-  const max = cats[0]?.[1] || 1;
-  $('#por-categoria').innerHTML = cats.length
-    ? cats.map(([c, v]) => `
-        <div class="barra-linha">
-          <span>${esc(c)}</span><b>${fmt(v)}</b>
-          <div class="barra"><i style="width:${Math.max(2, (v / max) * 100)}%"></i></div>
-        </div>`).join('')
-    : '<p class="vazio">Nenhum gasto neste mês ainda.</p>';
+  $('#qtd-categorias').textContent = cats.length ? `${cats.length} ${cats.length === 1 ? 'categoria' : 'categorias'}` : '';
 
-  // Lista agrupada por dia
+  // Barra segmentada: categorias sem cor própria viram um único bloco cinza no fim
+  const porCor = {};
+  for (const [nome, v] of cats) porCor[cat(nome).c] = (porCor[cat(nome).c] || 0) + v;
+  const barra = $('#barra-categorias');
+  barra.innerHTML = Object.entries(porCor)
+    .sort((a, b) => (a[0] === 'outros') - (b[0] === 'outros') || b[1] - a[1])
+    .map(([k, v]) => `<i style="flex:${v};background:var(--c-${k})"></i>`).join('');
+  barra.setAttribute('aria-label', cats.map(([n, v]) => `${n} ${pct(v, totalG)}%`).join(', '));
+  barra.hidden = !cats.length;
+
+  $('#grade-categorias').innerHTML = cats.length
+    ? cats.map(([nome, v]) => `
+        <button class="cat-card ${filtroCat === nome ? 'ativo' : ''}" style="--c:${corCat(nome)}" data-cat="${esc(nome)}">
+          ${iconeCategoria(nome)}
+          <span class="nome">${esc(nome)}</span>
+          <span class="valor">${fmt(v)}</span>
+          <span class="pct"><i style="--p:${pct(v, totalG)}%"></i>${pct(v, totalG)}%</span>
+        </button>`).join('')
+    : '<p class="vazio">Nenhum gasto neste mês ainda. Toque em + para começar.</p>';
+
+  document.querySelectorAll('.cat-card').forEach((b) => {
+    b.onclick = () => {
+      filtroCat = filtroCat === b.dataset.cat ? null : b.dataset.cat;
+      render();
+    };
+  });
+}
+
+function renderLista() {
+  const filtro = $('#filtro-ativo');
+  filtro.hidden = !filtroCat;
+  if (filtroCat) {
+    filtro.textContent = `${cat(filtroCat).e} ${filtroCat}  ✕`;
+    filtro.onclick = () => { filtroCat = null; render(); };
+  }
+  const itens = filtroCat ? transacoes.filter((t) => t.categoria === filtroCat) : transacoes;
   const lista = $('#lista');
   lista.innerHTML = '';
-  if (!transacoes.length) {
-    lista.innerHTML = '<p class="vazio" style="padding:0 4px">Toque em + para lançar o primeiro gasto.</p>';
+  if (!itens.length) {
+    lista.innerHTML = '<p class="vazio" style="padding:8px 6px">Nada por aqui ainda.</p>';
     return;
   }
+  let grupo = null;
   let diaAtual = '';
-  for (const t of transacoes) {
+  for (const t of itens) {
     if (t.data !== diaAtual) {
       diaAtual = t.data;
       const h = document.createElement('div');
       h.className = 'dia';
       h.textContent = rotuloDia(t.data);
-      lista.append(h);
+      grupo = document.createElement('div');
+      grupo.className = 'grupo';
+      lista.append(h, grupo);
     }
     const b = document.createElement('button');
     b.className = 'item';
-    const cat = t.categoria === 'A classificar' ? `<span class="tag-classificar">A classificar</span>` : esc(t.categoria);
+    const nomeCat = t.categoria === 'A classificar'
+      ? '<span class="tag-classificar">A classificar</span>'
+      : esc(t.categoria);
+    const receita = t.tipo === 'receita';
     b.innerHTML = `
-      <span class="desc">${esc(t.descricao || t.categoria)}</span>
-      <span class="valor ${t.tipo === 'receita' ? 'positivo' : ''}">${t.tipo === 'receita' ? '+' : '−'} ${fmt(t.valor)}</span>
-      <span class="meta">${cat} · ${esc(t.pessoa)}${t.conta ? ' · ' + esc(t.conta) : ''}${t.origem === 'atalho' ? ' · iPhone' : ''}</span>`;
+      ${iconeTransacao(t)}
+      <span class="meio">
+        <span class="desc">${esc(t.descricao || t.categoria)}</span>
+        <span class="meta">${nomeCat} · ${esc(t.pessoa)}${t.conta ? ' · ' + esc(t.conta) : ''}${t.origem === 'atalho' ? ' · iPhone' : ''}</span>
+      </span>
+      <span class="valor ${receita ? 'positivo' : ''}">${receita ? '+' : '−'} ${fmt(t.valor)}</span>`;
     b.onclick = () => abrirForm(t);
-    lista.append(b);
+    grupo.append(b);
   }
 }
 
 // ---------- Formulário ----------
-function montarChips() {
-  const chips = (id, nome, itens) => {
-    $(id).innerHTML = itens
-      .map((v) => `<label><input type="radio" name="${nome}" value="${esc(v)}"><span>${esc(v)}</span></label>`)
-      .join('');
-  };
-  chips('#chips-categoria', 'categoria', config.categorias.filter((c) => c !== 'A classificar'));
-  chips('#chips-pessoa', 'pessoa', config.pessoas);
-  chips('#chips-conta', 'conta', config.contas);
+function montarFormulario() {
+  $('#chips-categoria').innerHTML = config.categorias
+    .filter((c) => c !== 'A classificar')
+    .map((c) => `<label><input type="radio" name="categoria" value="${esc(c)}">
+      <span style="--c:${corCat(c)}"><em>${cat(c).e}</em>${esc(c)}</span></label>`).join('');
+  $('#chips-pessoa').innerHTML = config.pessoas
+    .map((p) => `<label><input type="radio" name="pessoa" value="${esc(p)}"><span>${esc(p)}</span></label>`).join('');
+  $('#chips-conta').innerHTML = config.contas.map((c) => {
+    const m = MARCA_CONTA[c] && MARCAS.find((x) => x.id === MARCA_CONTA[c]);
+    const ic = m ? iconeMarca(m) : `<span class="icone" style="--c:var(--c-casa)">💵</span>`;
+    return `<label><input type="radio" name="conta" value="${esc(c)}"><span>${ic}${esc(c)}</span></label>`;
+  }).join('');
+
+  $('#form').descricao.addEventListener('input', atualizarIconeDesc);
+  $('#chips-categoria').addEventListener('change', atualizarIconeDesc);
+}
+
+function atualizarIconeDesc() {
+  const f = $('#form');
+  const m = marcaDe(f.descricao.value);
+  const html = m ? iconeMarca(m, 'icone-p') : iconeCategoria(f.categoria.value || 'Outros', 'icone-p');
+  $('#desc-icone').outerHTML = html.replace('<span class="icone', '<span id="desc-icone" class="icone');
 }
 
 function marcar(nome, valor) {
@@ -164,9 +286,10 @@ function abrirForm(t = null) {
   f.valor.value = t ? (t.valor / 100).toFixed(2).replace('.', ',') : '';
   f.descricao.value = t?.descricao || '';
   marcar('categoria', t?.categoria || '');
-  marcar('pessoa', t?.pessoa || localStorageGet('pessoa') || config.pessoas[0]);
-  marcar('conta', t?.conta || localStorageGet('conta') || '');
+  marcar('pessoa', t?.pessoa || lsGet('pessoa') || config.pessoas[0]);
+  marcar('conta', t?.conta || lsGet('conta') || '');
   f.data.value = t?.data || hojeLocal();
+  atualizarIconeDesc();
   $('#dlg').showModal();
   if (!t) setTimeout(() => f.valor.focus(), 50);
 }
@@ -190,8 +313,8 @@ $('#form').addEventListener('submit', async (e) => {
   try {
     if (editandoId) await api('/api/transacoes/' + editandoId, { method: 'PUT', body: JSON.stringify(dados) });
     else await api('/api/transacoes', { method: 'POST', body: JSON.stringify(dados) });
-    localStorageSet('pessoa', dados.pessoa);
-    localStorageSet('conta', dados.conta);
+    lsSet('pessoa', dados.pessoa);
+    lsSet('conta', dados.conta);
     $('#dlg').close();
     if (dados.data.slice(0, 7) !== mes) mes = dados.data.slice(0, 7);
     await carregar();
@@ -209,8 +332,9 @@ $('#btn-excluir').onclick = async () => {
 };
 
 // ---------- Utilidades ----------
-function maiuscula(s) { return s.charAt(0).toUpperCase() + s.slice(1); }
+function pct(v, total) { return total ? Math.round((v / total) * 100) : 0; }
 function soma(lista) { return lista.reduce((s, t) => s + t.valor, 0); }
+function maiuscula(s) { return s.charAt(0).toUpperCase() + s.slice(1); }
 function esc(s) {
   return String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 }
@@ -224,9 +348,9 @@ function rotuloDia(iso) {
   const [a, m, d] = iso.split('-').map(Number);
   const dt = new Date(a, m - 1, d);
   if (dt.toDateString() === ontem.toDateString()) return 'Ontem';
-  return maiuscula(dt.toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'short' }));
+  return maiuscula(dt.toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'short' }).replace('.', ''));
 }
-function localStorageGet(k) { try { return localStorage.getItem('cf_' + k); } catch { return null; } }
-function localStorageSet(k, v) { try { localStorage.setItem('cf_' + k, v); } catch {} }
+function lsGet(k) { try { return localStorage.getItem('cf_' + k); } catch { return null; } }
+function lsSet(k, v) { try { localStorage.setItem('cf_' + k, v); } catch {} }
 
 iniciar();
