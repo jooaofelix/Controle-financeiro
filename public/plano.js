@@ -1,5 +1,5 @@
 // Tela "Planejar": salários, contas fixas, cartões e sugestões de vencimento
-import { $, fmt, fmtCurto, esc, api, CATS, cat, corCat, marcaDe, iconeMarca, iconeCategoria, iconeEmoji } from '/comum.js';
+import { $, fmt, fmtCurto, esc, api, CATS, cat, corCat, marcaDe, iconeMarca, iconeCategoria, iconeEmoji, mascote, toast } from '/comum.js';
 import { planejar, DIAS } from '/planejador.js';
 
 let config = null;
@@ -58,7 +58,7 @@ function render() {
 
   // Alertas
   $('#plano-alertas').innerHTML = resultado.alertas
-    .map((a) => `<div class="alerta alerta-${a.nivel}">⚠️ ${esc(a.texto)}</div>`).join('');
+    .map((a) => `<div class="alerta alerta-${a.nivel}">${mascote('preocupado')}<span>${esc(a.texto)}</span></div>`).join('');
 
   renderCalendario();
   renderSugestoes();
@@ -106,9 +106,9 @@ function renderSugestoes() {
   const el = $('#sugestoes');
   if (!s.length) {
     const temFlex = itens.some((i) => (i.tipo === 'conta' && i.flexivel) || (i.tipo === 'cartao' && i.valor > 0));
-    el.innerHTML = `<p class="vazio">${temFlex
-      ? '✅ As datas atuais já são as melhores para o saldo de vocês.'
-      : 'Marque “posso escolher o vencimento” nas contas que dá para mudar (internet, celular, cartões...) para receber sugestões.'}</p>`;
+    el.innerHTML = temFlex
+      ? `<div class="vazio-mascote">${mascote('oculos')}<p><b>Tudo no esquema!</b><br>As datas atuais já são as melhores para o saldo de vocês.</p></div>`
+      : '<p class="vazio">Marque “posso escolher o vencimento” nas contas que dá para mudar (internet, celular, cartões...) para receber sugestões.</p>';
     return;
   }
   el.innerHTML = s.map((x, i) => `
@@ -131,6 +131,7 @@ function renderSugestoes() {
         : { ...it, dia: sug.para };
       b.disabled = true;
       await salvarItem({ ...novo, valor: centavosTxt(novo.valor || 0) }, it.id); // a API recebe reais
+      toast('recibo', `${sug.nome}: agora vence dia ${sug.para}!`);
     };
   });
 }
@@ -228,6 +229,7 @@ $('#form-plano').addEventListener('submit', async (e) => {
     const existente = editando.tipo === 'ajustes' ? itens.find((i) => i.tipo === 'ajustes') : editando.item;
     await salvarItem(dados, existente?.id);
     $('#dlg-plano').close();
+    toast('joinha', 'Salvo!');
   } catch (err) {
     $('#plano-erro').textContent = err.message;
     $('#plano-erro').hidden = false;

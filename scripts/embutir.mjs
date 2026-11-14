@@ -9,9 +9,10 @@ const TIPOS = {
   '.js': 'text/javascript; charset=utf-8',
   '.svg': 'image/svg+xml',
   '.png': 'image/png',
+  '.webp': 'image/webp',
   '.webmanifest': 'application/manifest+json',
 };
-const BINARIOS = new Set(['.png']);
+const BINARIOS = new Set(['.png', '.webp']);
 
 function listar(dir) {
   return readdirSync(dir).flatMap((n) => {

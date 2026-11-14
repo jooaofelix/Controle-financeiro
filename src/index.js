@@ -96,7 +96,7 @@ function arquivoEstatico(caminho) {
     headers: {
       'Content-Type': a.tipo,
       // HTML/JS/CSS sempre revalidam (atualizações chegam na hora); ícones podem ficar em cache
-      'Cache-Control': a.base64 || nome.endsWith('.svg') ? 'public, max-age=86400' : 'no-cache',
+      'Cache-Control': a.base64 ? 'public, max-age=86400' : 'no-cache',
       'X-Content-Type-Options': 'nosniff',
     },
   });

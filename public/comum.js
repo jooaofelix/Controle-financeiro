@@ -72,3 +72,27 @@ export function iconeCategoria(nome, classe = '') {
 export function iconeEmoji(emoji, cor, classe = '') {
   return `<span class="icone ${classe}" style="--c:${cor}" aria-hidden="true">${emoji}</span>`;
 }
+
+// ---------- Mascote ----------
+// Poses: joinha, oculos, comemora, pensando, celular, moeda, correndo, preocupado, recibo
+export function mascote(pose, classe = '') {
+  return `<img class="mascote ${classe}" src="/mascote/${pose}.webp" alt="" aria-hidden="true">`;
+}
+
+let timerToast = null;
+export function toast(pose, texto) {
+  let el = document.getElementById('toast');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'toast';
+    el.className = 'toast';
+    el.setAttribute('role', 'status');
+    document.body.append(el);
+  }
+  el.innerHTML = `${mascote(pose)}<span>${esc(texto)}</span>`;
+  el.classList.remove('mostra');
+  void el.offsetWidth; // reinicia a animação
+  el.classList.add('mostra');
+  clearTimeout(timerToast);
+  timerToast = setTimeout(() => el.classList.remove('mostra'), 2400);
+}

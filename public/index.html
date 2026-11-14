@@ -42,11 +42,12 @@
 
     <!-- Cartão verde principal -->
     <section class="hero">
+      <div id="hero-mascote" class="hero-mascote"></div>
       <div class="hero-topo">
         <span id="hero-rotulo">Gasto no mês</span>
-        <span id="comparativo" class="pilula" hidden></span>
       </div>
       <strong id="total-gastos" class="hero-valor">R$ 0,00</strong>
+      <span id="comparativo" class="pilula" hidden></span>
       <div class="hero-linha">
         <div><span>Entradas</span><b id="total-receitas">R$ 0,00</b></div>
         <div><span>Saldo</span><b id="saldo">R$ 0,00</b></div>
@@ -55,6 +56,13 @@
     </section>
 
     <button id="aviso-classificar" class="aviso" hidden></button>
+
+    <!-- Vence em breve (do planejador) -->
+    <section id="proximas" class="card proximas" hidden>
+      <img class="mascote proximas-mascote" src="/mascote/correndo.webp" alt="" aria-hidden="true">
+      <div class="card-titulo"><h2>Vence em breve</h2><b id="proximas-total"></b></div>
+      <div id="proximas-lista"></div>
+    </section>
 
     <!-- Para onde foi o dinheiro -->
     <section class="card">
@@ -88,7 +96,7 @@
     </header>
 
     <section id="plano-vazio" class="card boas-vindas" hidden>
-      <div class="bv-emoji">📅</div>
+      <img class="mascote bv-mascote" src="/mascote/moeda.webp" alt="" aria-hidden="true">
       <h2>Vamos organizar as datas?</h2>
       <p>Cadastre o dia em que cai o salário de cada um, as contas fixas e os cartões. O app simula o saldo do mês e sugere os melhores dias de vencimento.</p>
       <div class="bv-passos">

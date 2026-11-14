@@ -1,5 +1,5 @@
 import {
-  $, fmt, esc, api, aoDeslogar, CATS, cat, corCat, marcaDe, iconeMarca, iconeCategoria, MARCAS,
+  $, fmt, esc, api, aoDeslogar, CATS, cat, corCat, marcaDe, iconeMarca, iconeCategoria, MARCAS, mascote, toast,
 } from '/comum.js';
 import { abrirPlano } from '/plano.js';
 
@@ -9,6 +9,7 @@ let config = null;
 let mes = hojeLocal().slice(0, 7);
 let transacoes = [];
 let totalMesAnterior = 0;
+let itensPlano = [];
 let filtroCat = null;
 let editandoId = null;
 
@@ -60,11 +61,13 @@ async function carregar() {
   const ano = mes.slice(0, 4) !== hojeLocal().slice(0, 4) ? ' ' + mes.slice(2, 4) : '';
   $('#mes-titulo').textContent = maiuscula(nomeMes(mes, { month: 'short' })) + ano;
   $('#hero-rotulo').textContent = 'Gasto em ' + nomeMes(mes);
-  const [atual, anterior] = await Promise.all([
+  const [atual, anterior, plano] = await Promise.all([
     api('/api/transacoes?mes=' + mes),
     api('/api/transacoes?mes=' + mesDeslocado(mes, -1)).catch(() => []),
+    api('/api/plano').catch(() => ({ itens: [] })),
   ]);
   transacoes = atual;
+  itensPlano = plano.itens;
   totalMesAnterior = soma(anterior.filter((t) => t.tipo === 'despesa'));
   render();
 }
@@ -85,16 +88,21 @@ function render() {
   const totalR = soma(transacoes.filter((t) => t.tipo === 'receita'));
 
   $('#total-gastos').textContent = fmt(totalG);
+  $('#total-gastos').classList.toggle('longo', fmt(totalG).length > 12);
   $('#total-receitas').textContent = fmt(totalR);
   $('#saldo').textContent = fmt(totalR - totalG);
 
-  // Comparativo com o mês anterior
+  // Comparativo com o mês anterior + humor do mascote
   const comp = $('#comparativo');
+  let pose = totalG ? 'joinha' : 'celular';
   if (totalMesAnterior > 0 && totalG > 0) {
     const p = Math.round(((totalG - totalMesAnterior) / totalMesAnterior) * 100);
     comp.textContent = `${p > 0 ? '▲' : p < 0 ? '▼' : '='} ${Math.abs(p)}% vs ${nomeMes(mesDeslocado(mes, -1), { month: 'short' })}`;
     comp.hidden = false;
+    pose = p <= -5 ? 'comemora' : p >= 10 ? 'preocupado' : 'oculos';
   } else comp.hidden = true;
+  if (totalR > 0 && totalR - totalG < 0) pose = 'preocupado';
+  $('#hero-mascote').innerHTML = mascote(pose, 'contorno');
 
   // Por pessoa
   $('#por-pessoa').innerHTML = config.pessoas.map((p) => `
@@ -107,11 +115,39 @@ function render() {
   const pend = gastos.filter((t) => t.categoria === 'A classificar');
   const aviso = $('#aviso-classificar');
   aviso.hidden = pend.length === 0;
-  aviso.textContent = `❓ ${pend.length} ${pend.length === 1 ? 'gasto chegou' : 'gastos chegaram'} do iPhone sem categoria — toque para classificar`;
+  aviso.innerHTML = `${mascote('pensando')}<span><b>${pend.length} ${pend.length === 1 ? 'gasto chegou' : 'gastos chegaram'} do iPhone sem categoria.</b> Toque para classificar.</span>`;
   aviso.onclick = () => pend[0] && abrirForm(pend[0]);
 
+  renderProximas();
   renderCategorias(gastos, totalG);
   renderLista();
+}
+
+// Contas e faturas que vencem nos próximos 7 dias (do planejador)
+function renderProximas() {
+  const card = $('#proximas');
+  const hoje = new Date();
+  if (mes !== hojeLocal().slice(0, 7)) { card.hidden = true; return; }
+  const ultimoDia = new Date(hoje.getFullYear(), hoje.getMonth() + 1, 0).getDate();
+  const vencendo = itensPlano
+    .filter((i) => i.tipo === 'conta' || (i.tipo === 'cartao' && i.valor > 0))
+    .map((i) => {
+      const dia = Math.min(i.tipo === 'cartao' ? i.vencimento : i.dia, ultimoDia);
+      const faltam = (dia - hoje.getDate() + ultimoDia) % ultimoDia;
+      return { ...i, dia, faltam, nomeExib: i.tipo === 'cartao' ? 'Fatura ' + i.nome : i.nome };
+    })
+    .filter((i) => i.faltam <= 7)
+    .sort((a, b) => a.faltam - b.faltam);
+  card.hidden = !vencendo.length;
+  if (!vencendo.length) return;
+  const total = vencendo.reduce((s, i) => s + i.valor, 0);
+  $('#proximas-total').textContent = fmt(total);
+  $('#proximas-lista').innerHTML = vencendo.map((i) => {
+    const m = marcaDe(i.nomeExib);
+    const ic = m ? iconeMarca(m, 'icone-p') : iconeCategoria(i.categoria || 'Casa', 'icone-p');
+    const quando = i.faltam === 0 ? '<b class="negativo">hoje</b>' : i.faltam === 1 ? '<b>amanhã</b>' : `em ${i.faltam} dias`;
+    return `<div class="prox-item">${ic}<span>${esc(i.nomeExib)}<small>dia ${i.dia} · ${quando}</small></span><b>${fmt(i.valor)}</b></div>`;
+  }).join('');
 }
 
 function renderCategorias(gastos, totalG) {
@@ -138,7 +174,7 @@ function renderCategorias(gastos, totalG) {
           <span class="valor">${fmt(v)}</span>
           <span class="pct"><i style="--p:${pct(v, totalG)}%"></i>${pct(v, totalG)}%</span>
         </button>`).join('')
-    : '<p class="vazio">Nenhum gasto neste mês ainda. Toque em + para começar.</p>';
+    : `<div class="vazio-mascote">${mascote('celular')}<p><b>Nenhum gasto neste mês ainda.</b><br>Toque no <b>+</b> ou faça uma compra com Apple Pay — o Atalho do iPhone anota sozinho.</p></div>`;
 
   document.querySelectorAll('.cat-card').forEach((b) => {
     b.onclick = () => {
@@ -262,6 +298,7 @@ $('#form').addEventListener('submit', async (e) => {
     lsSet('pessoa', dados.pessoa);
     lsSet('conta', dados.conta);
     $('#dlg').close();
+    toast(editandoId ? 'joinha' : 'recibo', editandoId ? 'Lançamento atualizado!' : 'Anotado!');
     if (dados.data.slice(0, 7) !== mes) mes = dados.data.slice(0, 7);
     await carregar();
   } catch (err) {
