@@ -19,10 +19,27 @@ let editando = null; // { tipo, item? }
 
 export async function abrirPlano(cfg) {
   config = cfg;
-  const dados = await api('/api/plano');
+  const [dados, log] = await Promise.all([api('/api/plano'), api('/api/atalho/log').catch(() => [])]);
   itens = dados.itens;
   gastoEstimado = dados.gastoVariavel;
   render();
+  renderDiario(log);
+}
+
+// Diário do Atalho: mostra o que o iPhone mandou e se deu certo (ajuda a achar falhas)
+function renderDiario(log) {
+  const el = $('#atalho-log');
+  if (!log.length) {
+    el.innerHTML = '<p class="vazio">Nenhuma compra chegou do iPhone ainda. Se a automação mostrou erro e nada aparece aqui, o problema está no próprio Atalho (antes de chegar ao app).</p>';
+    return;
+  }
+  el.innerHTML = log.map((l) => {
+    const quando = new Date(l.quando.replace(' ', 'T') + 'Z').toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+    return `<details class="diario ${l.ok ? 'ok' : 'erro'}">
+      <summary><span>${l.ok ? '✅' : '⚠️'}</span><span class="d-txt">${esc(l.resposta.split('\n')[0].replace(/^(⚠️ pagaAI não anotou: |✅ |📝 )/u, ''))}</span><small>${quando}</small></summary>
+      <code>${esc(l.corpo)}</code>
+    </details>`;
+  }).join('');
 }
 
 function montarPlano() {

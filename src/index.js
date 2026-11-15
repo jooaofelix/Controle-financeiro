@@ -36,6 +36,14 @@ const SCHEMA = [
     criado_em  TEXT    NOT NULL DEFAULT CURRENT_TIMESTAMP
   )`,
   `CREATE INDEX IF NOT EXISTS idx_transacoes_data ON transacoes(data)`,
+  // Diário do Atalho do iPhone: últimas chamadas (para descobrir falhas)
+  `CREATE TABLE IF NOT EXISTS atalho_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    quando TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    ok INTEGER NOT NULL,
+    resposta TEXT NOT NULL,
+    corpo TEXT NOT NULL
+  )`,
   // Planejador: salários, contas fixas, cartões e ajustes (dados em JSON)
   `CREATE TABLE IF NOT EXISTS plano (
     id    INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -114,7 +122,7 @@ async function rotear(req, env, url) {
     return json({ ok: true }, 200, { 'Set-Cookie': cookie('', 0) });
   }
   // Endpoint do Atalho do iPhone (autentica pelo cabeçalho Authorization: Bearer <SENHA>)
-  if (pathname === '/api/atalho' && m === 'POST') return atalho(req, env);
+  if (pathname === '/api/atalho' && m === 'POST') return atalhoComDiario(req, env);
 
   await exigirLogin(req, env);
 
@@ -150,6 +158,11 @@ async function rotear(req, env, url) {
   if (mId && m === 'DELETE') {
     await env.DB.prepare(`DELETE FROM transacoes WHERE id=?`).bind(Number(mId[1])).run();
     return json({ ok: true });
+  }
+
+  if (pathname === '/api/atalho/log' && m === 'GET') {
+    const { results } = await env.DB.prepare(`SELECT * FROM atalho_log ORDER BY id DESC LIMIT 15`).all();
+    return json(results);
   }
 
   // ---------- Planejador ----------
@@ -283,18 +296,54 @@ async function exigirLogin(req, env) {
 
 // ---------- Atalho do iPhone ----------
 
-async function atalho(req, env) {
+// Registra cada chamada do Atalho (sem a senha) e devolve a resposta normalmente
+async function atalhoComDiario(req, env) {
+  const corpoTxt = await req.text().catch(() => '');
+  const tipo = req.headers.get('Content-Type') || '';
+  let resposta, ok = 1, status = 201;
+  try {
+    resposta = await atalho(req, env, corpoTxt, tipo);
+  } catch (e) {
+    ok = 0; status = e.status || 500;
+    resposta = `⚠️ pagaAI não anotou: ${e.message || 'Erro interno'}`;
+  }
+  try {
+    await env.DB.prepare(`INSERT INTO atalho_log (ok, resposta, corpo) VALUES (?, ?, ?)`)
+      .bind(ok, resposta, `[${tipo || 'sem tipo'}] ${corpoTxt}`.slice(0, 1500)).run();
+    await env.DB.prepare(`DELETE FROM atalho_log WHERE id NOT IN (SELECT id FROM atalho_log ORDER BY id DESC LIMIT 30)`).run();
+  } catch {}
+  return texto(resposta, status);
+}
+
+// Lê o corpo como JSON; se o Atalho mandar como formulário, também aceita
+function lerCorpo(txt, tipo) {
+  try { const j = JSON.parse(txt); if (j && typeof j === 'object') return j; } catch {}
+  if (/form/i.test(tipo) || txt.includes('=')) {
+    const f = Object.fromEntries(new URLSearchParams(txt));
+    if (Object.keys(f).length) return f;
+  }
+  return null;
+}
+
+// Valor vindo do iPhone pode ser texto, número ou um objeto (ex.: cartão) — vira texto
+function comoTexto(v) {
+  if (v == null) return '';
+  if (typeof v === 'object') return String(v.nome ?? v.name ?? v.title ?? Object.values(v)[0] ?? '');
+  return String(v);
+}
+
+async function atalho(req, env, corpoTxt, tipo) {
   const auth = (req.headers.get('Authorization') || '').trim().replace(/^Bearer\s+/i, '').trim();
   if (!env.SENHA || !iguais(auth, env.SENHA)) throw erro(401, 'Senha inválida');
 
-  const bruto = await req.json().catch(() => null);
-  if (!bruto || typeof bruto !== 'object') throw erro(400, 'Corpo JSON inválido');
+  const bruto = lerCorpo(corpoTxt, tipo);
+  if (!bruto) throw erro(400, 'Corpo vazio ou inválido (confira se o Corpo da Solicitação é JSON)');
   // Aceita chaves com maiúscula, acento ou espaço ("Valor", "Cartão ") — o teclado do iPhone muda sozinho
   const chave = (k) => k.normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toLowerCase();
-  const b = Object.fromEntries(Object.entries(bruto).map(([k, v]) => [chave(k), typeof v === 'string' ? v.trim() : v]));
+  const b = Object.fromEntries(Object.entries(bruto).map(([k, v]) => [chave(k), typeof v === 'number' ? v : comoTexto(v).trim()]));
 
   const valor = paraCentavos(b.valor);
-  if (!valor) throw erro(400, 'Valor inválido');
+  if (!valor) throw erro(400, `Valor inválido (chegou: "${String(b.valor ?? '').slice(0, 40)}")`);
   const estabelecimento = String(b.estabelecimento || '').trim().slice(0, 120);
   const lista = pessoas(env);
   const pessoa = lista.find((p) => p.toLowerCase() === String(b.pessoa || '').trim().toLowerCase()) || lista[0];
@@ -317,8 +366,7 @@ async function atalho(req, env) {
     : `✅ Anotado: ${reais(valor)}${onde} (${categoria})`;
   const mensagem = `${linha1}\nGastos de ${NOMES_MES[Number(data.slice(5, 7)) - 1]}: ${reais(total)}`;
 
-  // Texto puro: no Atalho basta "Mostrar Notificação" com o "Conteúdo do URL"
-  return texto(mensagem, 201);
+  return mensagem;
 }
 
 const NOMES_MES = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'];
