@@ -5,7 +5,8 @@
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
     "marcas": "node scripts/gerar-marcas.mjs",
-    "test": "node scripts/testar-planejador.mjs"
+    "test": "node scripts/testar-planejador.mjs",
+    "test:atalho": "node scripts/testar-atalho.mjs"
   },
   "devDependencies": {
     "simple-icons": "13.21.0",

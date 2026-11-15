@@ -332,6 +332,28 @@ function comoTexto(v) {
   return String(v);
 }
 
+// A quantia do Apple Pay nem sempre chega como texto simples: no crédito ela
+// pode vir como objeto com moeda junto (ex.: { currency: 'BRL', amount: 45.9 }),
+// e aí o primeiro campo do objeto é a moeda, não o número. Procura o primeiro
+// pedaço que vira valor de verdade — e só nos campos de quantia, para nunca
+// confundir com o número do cartão.
+function acharValor(bru) {
+  for (const k of ['valor', 'quantia', 'amount', 'total', 'preco']) {
+    const v = bru[k];
+    if (v == null) continue;
+    if (typeof v !== 'object') {
+      const c = paraCentavos(v);
+      if (c) return c;
+      continue;
+    }
+    for (const parte of Object.values(v)) {
+      const c = paraCentavos(parte);
+      if (c) return c;
+    }
+  }
+  return 0;
+}
+
 async function atalho(req, env, corpoTxt, tipo) {
   const auth = (req.headers.get('Authorization') || '').trim().replace(/^Bearer\s+/i, '').trim();
   if (!env.SENHA || !iguais(auth, env.SENHA)) throw erro(401, 'Senha inválida');
@@ -340,10 +362,17 @@ async function atalho(req, env, corpoTxt, tipo) {
   if (!bruto) throw erro(400, 'Corpo vazio ou inválido (confira se o Corpo da Solicitação é JSON)');
   // Aceita chaves com maiúscula, acento ou espaço ("Valor", "Cartão ") — o teclado do iPhone muda sozinho
   const chave = (k) => k.normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toLowerCase();
-  const b = Object.fromEntries(Object.entries(bruto).map(([k, v]) => [chave(k), typeof v === 'number' ? v : comoTexto(v).trim()]));
+  const bru = Object.fromEntries(Object.entries(bruto).map(([k, v]) => [chave(k), v]));
+  const b = Object.fromEntries(Object.entries(bru).map(([k, v]) => [k, typeof v === 'number' ? v : comoTexto(v).trim()]));
 
-  const valor = paraCentavos(b.valor);
-  if (!valor) throw erro(400, `Valor inválido (chegou: "${String(b.valor ?? '').slice(0, 40)}")`);
+  const valor = acharValor(bru);
+  // Quando falha, a notificação precisa dizer o bastante para não exigir outro teste:
+  // o que veio no campo (cru) e quais campos chegaram.
+  if (!valor) {
+    const cru = JSON.stringify(bru.valor ?? null).slice(0, 60);
+    const campos = Object.keys(bru).join(', ') || 'nenhum';
+    throw erro(400, `Valor inválido (chegou: ${cru} | campos: ${campos})`);
+  }
   const estabelecimento = String(b.estabelecimento || '').trim().slice(0, 120);
   const lista = pessoas(env);
   const pessoa = lista.find((p) => p.toLowerCase() === String(b.pessoa || '').trim().toLowerCase()) || lista[0];
