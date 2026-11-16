@@ -12,7 +12,7 @@ const CONTAS = ['Nubank', 'Inter', 'Dinheiro'];
 // Palavras no nome do estabelecimento -> categoria (usado no Atalho do iPhone)
 const REGRAS_CATEGORIA = [
   [/amazon|mercado ?livre|shopee|magalu|magazine|americanas|aliexpress|shein|renner|riachuelo/i, 'Compras'],
-  [/ifood|rappi|restaur|lanch|pizz|burger|mc ?donald|bk |padaria|cafe|café|bar /i, 'Alimentação'],
+  [/ifood|rappi|restaur|lanch|pizz|burger|mc ?donald|bk |padaria|cafe|café|bar |gourmet|sushi|churrasc|aÇai|açaí|acai|sorvet|doceria|confeitaria|cantina|bistr/i, 'Alimentação'],
   [/mercado|supermerc|atacad|assai|assaí|carrefour|\bextra\b|p[aã]o de a[cç]|hortifruti|sacol/i, 'Mercado'],
   [/uber|\b99\b|posto|shell|ipiranga|petrobras|estacion|metr[oô]|sem parar|veloe|cabify/i, 'Transporte'],
   [/farm|drog|raia|pacheco|pague menos|hospital|cl[ií]nica|laborat/i, 'Saúde'],
@@ -355,8 +355,14 @@ function acharValor(bru) {
 }
 
 async function atalho(req, env, corpoTxt, tipo) {
-  const auth = (req.headers.get('Authorization') || '').trim().replace(/^Bearer\s+/i, '').trim();
-  if (!env.SENHA || !iguais(auth, env.SENHA)) throw erro(401, 'Senha inválida');
+  // Tolerante ao corretor do iPhone: ignora acento ("maracujá"), maiúsculas, espaços e o "Bearer"
+  const normalizar = (v) => String(v || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/\s+/g, '');
+  const auth = normalizar(req.headers.get('Authorization')).replace(/^bearer/, '');
+  if (!env.SENHA || !iguais(auth, normalizar(env.SENHA))) {
+    // Pista do que chegou (não revela a senha certa): tamanho, começo e fim
+    const dica = auth ? `chegou "${auth.slice(0, 3)}…${auth.slice(-2)}", ${auth.length} letras` : 'cabeçalho Authorization vazio';
+    throw erro(401, `Senha inválida (${dica})`);
+  }
 
   const bruto = lerCorpo(corpoTxt, tipo);
   if (!bruto) throw erro(400, 'Corpo vazio ou inválido (confira se o Corpo da Solicitação é JSON)');
