@@ -308,8 +308,10 @@ async function atalhoComDiario(req, env) {
     resposta = `⚠️ pagaAI não anotou: ${e.message || 'Erro interno'}`;
   }
   try {
+    // nomes dos cabeçalhos (sem valores) ajudam a achar erro de digitação no Atalho
+    const cabecalhos = [...req.headers.keys()].filter((k) => !/^(cf-|x-forwarded|x-real-ip|accept-encoding|connection|host|content-length|cdn-loop)/i.test(k)).join(', ');
     await env.DB.prepare(`INSERT INTO atalho_log (ok, resposta, corpo) VALUES (?, ?, ?)`)
-      .bind(ok, resposta, `[${tipo || 'sem tipo'}] ${corpoTxt}`.slice(0, 1500)).run();
+      .bind(ok, resposta, `[${tipo || 'sem tipo'}] [cabeçalhos: ${cabecalhos}] ${corpoTxt}`.slice(0, 1500)).run();
     await env.DB.prepare(`DELETE FROM atalho_log WHERE id NOT IN (SELECT id FROM atalho_log ORDER BY id DESC LIMIT 30)`).run();
   } catch {}
   return texto(resposta, status);
@@ -357,8 +359,14 @@ function acharValor(bru) {
 async function atalho(req, env, corpoTxt, tipo) {
   // Tolerante ao corretor do iPhone: ignora acento ("maracujá"), maiúsculas, espaços e o "Bearer"
   const normalizar = (v) => String(v || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/\s+/g, '');
-  const auth = normalizar(req.headers.get('Authorization')).replace(/^bearer/, '');
-  if (!env.SENHA || !iguais(auth, normalizar(env.SENHA))) {
+  const certa = normalizar(env.SENHA);
+  // Procura a senha no Authorization e em qualquer cabeçalho parecido ("Authorizaton", "Autorização"...)
+  const candidatos = [];
+  for (const [nome, valor] of req.headers) {
+    if (/auth|autori|senha|token/i.test(nome)) candidatos.push(normalizar(valor).replace(/^bearer/, ''));
+  }
+  const auth = candidatos.find((c) => c && iguais(c, certa)) ?? candidatos[0] ?? '';
+  if (!env.SENHA || !iguais(auth, certa)) {
     // Pista do que chegou (não revela a senha certa): tamanho, começo e fim
     const dica = auth ? `chegou "${auth.slice(0, 3)}…${auth.slice(-2)}", ${auth.length} letras` : 'cabeçalho Authorization vazio';
     throw erro(401, `Senha inválida (${dica})`);
