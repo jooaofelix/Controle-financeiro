@@ -12,6 +12,8 @@ watch_dir = "public"
 [vars]
 # Nomes que aparecem no app (separados por vírgula)
 PESSOAS = "Marido,Esposa"
+# Chave pública das notificações (a privada fica no segredo VAPID_PRIVADA)
+VAPID_PUBLICA = "BO9s2aPJy6fN4hInPh4SPjpF4MJsKH91kZlu1WEZUes4dgAygsTx1Zumqocmka7XxXc22IXIXjhGx8AvFmOm4bQ"
 
 # Banco de dados: Durable Object com SQLite (plano grátis)
 [[durable_objects.bindings]]

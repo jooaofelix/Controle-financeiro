@@ -2,6 +2,7 @@ import {
   $, fmt, esc, api, aoDeslogar, CATS, cat, corCat, marcaDe, iconeMarca, iconeCategoria, MARCAS, mascote, toast,
 } from '/comum.js';
 import { contasDoMes } from '/dividas.js';
+import { registrarSW, bannerInicio } from '/notificacoes.js';
 import { abrirPlano } from '/plano.js';
 
 const MARCA_CONTA = { Nubank: 'nubank', Inter: 'inter' };
@@ -46,6 +47,11 @@ async function iniciar() {
   $('#tela-app').hidden = false;
   montarFormulario();
   await carregar();
+  await registrarSW();
+  bannerInicio(() => {
+    mostrarAba('plano');
+    setTimeout(() => $('#card-notif')?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 400);
+  });
 }
 
 function mesDeslocado(base, delta) {

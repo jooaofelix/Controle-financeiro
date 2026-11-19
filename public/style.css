@@ -471,3 +471,13 @@ dialog::backdrop { background: rgb(10 20 15 / 0.45); }
 .diario.erro .d-txt { color: var(--negativo); }
 .diario small { color: var(--sutil); white-space: nowrap; }
 .diario code { display: block; margin-top: 8px; padding: 10px; border-radius: 10px; background: var(--bg); font: 12px/1.4 ui-monospace, "JetBrains Mono", monospace; white-space: pre-wrap; word-break: break-all; }
+
+/* Notificações */
+.banner-notif { display: flex; align-items: center; gap: 10px; padding: 8px 10px 8px 8px; background: var(--menta); color: var(--menta-tx); }
+.banner-notif .mascote { width: 50px; flex: none; }
+.banner-notif span { flex: 1; font-size: 14px; }
+.btn-mini { border: 0; border-radius: 12px; padding: 8px 14px; font-weight: 700; background: var(--marca); color: var(--marca-tx); cursor: pointer; }
+.btn-x { border: 0; background: transparent; color: inherit; font-size: 16px; padding: 6px; cursor: pointer; opacity: .6; }
+.notif-ativo { font-size: 15px; margin-bottom: 6px; }
+.acoes-notif { display: flex; gap: 8px; margin-top: 10px; }
+.acoes-notif .btn-sec { flex: 1; }

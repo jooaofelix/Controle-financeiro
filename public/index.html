@@ -56,6 +56,7 @@
     </section>
 
     <button id="aviso-classificar" class="aviso" hidden></button>
+    <div id="banner-notif" class="aviso banner-notif" hidden></div>
 
     <!-- Vence em breve (do planejador) -->
     <section id="proximas" class="card proximas" hidden>
@@ -160,16 +161,23 @@
         <div id="lista-dividas" class="lista-plano"></div>
       </section>
 
-      <section class="card">
-        <div class="card-titulo"><h2>📱 Atalho do iPhone</h2><span class="sutil">últimas compras recebidas</span></div>
-        <div id="atalho-log"></div>
-      </section>
-
       <section class="card ajustes-resumo">
         <div><span class="rotulo">Na conta no dia 1</span><b id="ajuste-saldo"></b></div>
         <div><span class="rotulo">Dia a dia por mês</span><b id="ajuste-variavel"></b><small id="ajuste-variavel-origem" class="sutil"></small></div>
       </section>
     </div>
+
+    <!-- Sempre visíveis, mesmo sem nada cadastrado no planejador -->
+    <section class="card" id="card-notif">
+      <div class="card-titulo"><h2>🔔 Notificações</h2><span class="sutil">entradas e saídas</span></div>
+      <div id="notif-conteudo"></div>
+    </section>
+
+    <section class="card">
+      <div class="card-titulo"><h2>📱 Atalho do iPhone</h2><span class="sutil">últimas compras recebidas</span></div>
+      <div id="atalho-log"></div>
+    </section>
+
    </div>
 
     <!-- Barra de navegação -->

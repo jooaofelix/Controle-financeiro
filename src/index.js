@@ -2,6 +2,7 @@
 import { DurableObject } from 'cloudflare:workers';
 import { paraCentavos } from './valores.js';
 import { ESTATICOS } from './estaticos.js';
+import { enviarPush } from './push.js';
 
 const CATEGORIAS = [
   'Mercado', 'Alimentação', 'Casa', 'Transporte', 'Saúde', 'Lazer',
@@ -43,6 +44,14 @@ const SCHEMA = [
     ok INTEGER NOT NULL,
     resposta TEXT NOT NULL,
     corpo TEXT NOT NULL
+  )`,
+  // Aparelhos que recebem notificação de cada entrada/saída
+  `CREATE TABLE IF NOT EXISTS push_inscricoes (
+    endpoint  TEXT PRIMARY KEY,
+    p256dh    TEXT NOT NULL,
+    auth      TEXT NOT NULL,
+    pessoa    TEXT NOT NULL DEFAULT '',
+    criado_em TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
   )`,
   // Planejador: salários, contas fixas, cartões e ajustes (dados em JSON)
   `CREATE TABLE IF NOT EXISTS plano (
@@ -143,6 +152,7 @@ async function rotear(req, env, url) {
       `INSERT INTO transacoes (data, valor, tipo, categoria, pessoa, conta, descricao, origem)
        VALUES (?, ?, ?, ?, ?, ?, ?, 'manual') RETURNING *`
     ).bind(t.data, t.valor, t.tipo, t.categoria, t.pessoa, t.conta, t.descricao).first();
+    await notificarLancamento(env, r);
     return json(r, 201);
   }
   const mId = pathname.match(/^\/api\/transacoes\/(\d+)$/);
@@ -158,6 +168,41 @@ async function rotear(req, env, url) {
   if (mId && m === 'DELETE') {
     await env.DB.prepare(`DELETE FROM transacoes WHERE id=?`).bind(Number(mId[1])).run();
     return json({ ok: true });
+  }
+
+  // ---------- Notificações (Web Push) ----------
+  if (pathname === '/api/push/chave' && m === 'GET') {
+    return json({ chave: env.VAPID_PUBLICA || null });
+  }
+  if (pathname === '/api/push/inscrever' && m === 'POST') {
+    const b = await req.json().catch(() => ({}));
+    const ep = String(b.endpoint || '');
+    if (!/^(https:\/\/|http:\/\/(localhost|127\.0\.0\.1)[:/])/.test(ep) || !b.keys?.p256dh || !b.keys?.auth) throw erro(400, 'Inscrição inválida');
+    const lista = pessoas(env);
+    const pessoa = lista.includes(b.pessoa) ? b.pessoa : '';
+    await env.DB.prepare(
+      `INSERT INTO push_inscricoes (endpoint, p256dh, auth, pessoa) VALUES (?, ?, ?, ?)
+       ON CONFLICT(endpoint) DO UPDATE SET p256dh=excluded.p256dh, auth=excluded.auth, pessoa=excluded.pessoa`
+    ).bind(ep, String(b.keys.p256dh), String(b.keys.auth), pessoa).run();
+    return json({ ok: true });
+  }
+  if (pathname === '/api/push/remover' && m === 'POST') {
+    const b = await req.json().catch(() => ({}));
+    await env.DB.prepare(`DELETE FROM push_inscricoes WHERE endpoint=?`).bind(String(b.endpoint || '')).run();
+    return json({ ok: true });
+  }
+  if (pathname === '/api/push/aparelhos' && m === 'GET') {
+    const { results } = await env.DB.prepare(`SELECT endpoint, pessoa, criado_em FROM push_inscricoes ORDER BY criado_em`).all();
+    return json(results.map((r) => ({ ...r, endpoint: undefined, servico: new URL(r.endpoint).hostname, fim: r.endpoint.slice(-12) })));
+  }
+  if (pathname === '/api/push/teste' && m === 'POST') {
+    const b = await req.json().catch(() => ({}));
+    const r = await notificar(env, {
+      titulo: '🔔 pagaAI',
+      corpo: 'Notificações ligadas! Vocês vão receber cada entrada e saída aqui.',
+      tag: 'teste',
+    }, b.endpoint ? String(b.endpoint) : null);
+    return json(r);
   }
 
   if (pathname === '/api/atalho/log' && m === 'GET') {
@@ -409,7 +454,52 @@ async function atalho(req, env, corpoTxt, tipo) {
     : `✅ Anotado: ${reais(valor)}${onde} (${categoria})`;
   const mensagem = `${linha1}\nGastos de ${NOMES_MES[Number(data.slice(5, 7)) - 1]}: ${reais(total)}`;
 
+  await notificarLancamento(env, r);
   return mensagem;
+}
+
+// ---------- Notificações ----------
+
+// Avisa todos os aparelhos inscritos sobre um lançamento novo (entrada ou saída)
+async function notificarLancamento(env, t) {
+  try {
+    const entrada = t.tipo === 'receita';
+    const { total } = await env.DB.prepare(
+      `SELECT COALESCE(SUM(valor), 0) AS total FROM transacoes WHERE tipo=? AND substr(data,1,7) = ?`
+    ).bind(entrada ? 'receita' : 'despesa', t.data.slice(0, 7)).first();
+    const detalhes = [...new Set([t.descricao, t.categoria, t.pessoa, t.conta])]
+      .filter((x) => x && x !== 'A classificar').join(' · ');
+    const aviso = t.categoria === 'A classificar' ? '\nToque para escolher a categoria.' : '';
+    await notificar(env, {
+      titulo: entrada ? `💰 Entrada de ${reais(t.valor)}` : `💸 Saída de ${reais(t.valor)}`,
+      corpo: `${detalhes}${aviso}\n${entrada ? 'Entradas' : 'Gastos'} de ${NOMES_MES[Number(t.data.slice(5, 7)) - 1]}: ${reais(total)}`,
+      tag: `lancamento-${t.id}`,
+    });
+  } catch {}
+}
+
+// Envia para todos (ou só um endpoint). Inscrições vencidas (404/410) são apagadas.
+async function notificar(env, dados, soEndpoint = null) {
+  if (!env.VAPID_PUBLICA || !env.VAPID_PRIVADA) return { enviados: 0, erro: 'Notificações não configuradas no servidor' };
+  const vapid = { vapidPrivadaJwk: JSON.parse(env.VAPID_PRIVADA), vapidPublica: env.VAPID_PUBLICA, contato: env.VAPID_CONTATO || 'https://controle-financeiro.desatasistemas.workers.dev' };
+  const { results } = soEndpoint
+    ? await env.DB.prepare(`SELECT * FROM push_inscricoes WHERE endpoint=?`).bind(soEndpoint).all()
+    : await env.DB.prepare(`SELECT * FROM push_inscricoes`).all();
+  const limite = (p) => Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(new Error('tempo esgotado')), 5000))]);
+  const res = await Promise.allSettled(results.map((i) => limite(enviarPush(i, dados, vapid))));
+  let enviados = 0;
+  const falhas = [];
+  for (let k = 0; k < res.length; k++) {
+    const st = res[k].status === 'fulfilled' ? res[k].value : 0;
+    if (st >= 200 && st < 300) enviados++;
+    else {
+      falhas.push(res[k].status === 'fulfilled' ? `HTTP ${st}` : res[k].reason?.message || 'erro');
+      if (st === 404 || st === 410) {
+        await env.DB.prepare(`DELETE FROM push_inscricoes WHERE endpoint=?`).bind(results[k].endpoint).run();
+      }
+    }
+  }
+  return { enviados, aparelhos: results.length, falhas };
 }
 
 const NOMES_MES = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'];
