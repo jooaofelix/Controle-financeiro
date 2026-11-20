@@ -4,6 +4,7 @@ import { planejar, DIAS } from '/planejador.js';
 import { cartaoNotificacoes } from '/notificacoes.js';
 import { cartaoBancos } from '/bancos.js';
 import { situacaoMes } from '/vinculos.js';
+import { projetarMes } from '/projecao.js';
 import { situacao, resumoDividas, contasDoMes, parcelasNoCartao, inicioDe, parcelaDoMes, mesAno } from '/dividas.js';
 
 function hojeLocal() {
@@ -20,17 +21,21 @@ let verSugestao = true;
 let diaSelecionado = null;
 let editando = null; // { tipo, item? }
 let lancRecentes = [];
-let pagamentos = []; // gastos vinculados a contas previstas // lançamentos deste mês e do anterior (para a fatura atual)
+let pagamentos = []; // gastos vinculados a contas previstas
+let saldos = [];     // saldo agora em cada conta (banco ou informado)
+let projecao = null; // previsão real até o fim do mês // lançamentos deste mês e do anterior (para a fatura atual)
 
 export async function abrirPlano(cfg) {
   config = cfg;
   const ym = hojeLocal().slice(0, 7);
   const [a, mm] = ym.split('-').map(Number);
   const ant = `${mm === 1 ? a - 1 : a}-${String(mm === 1 ? 12 : mm - 1).padStart(2, '0')}`;
-  const [dados, log, l1, l2] = await Promise.all([
+  const [dados, log, l1, l2, sal] = await Promise.all([
     api('/api/plano'), api('/api/atalho/log').catch(() => []),
     api('/api/transacoes?mes=' + ym).catch(() => []), api('/api/transacoes?mes=' + ant).catch(() => []),
+    api('/api/saldos').catch(() => []),
   ]);
+  saldos = sal;
   lancRecentes = [...l1, ...l2];
   itens = dados.itens;
   pagamentos = dados.pagamentos || [];
@@ -65,7 +70,8 @@ function montarPlano() {
     // parcelas de boleto deste mês entram como contas fixas (não dá para mudar a data)
     contas: [...itens.filter((i) => i.tipo === 'conta'), ...contasDoMes(dividas, hojeLocal().slice(0, 7))],
     cartoes: itens.filter((i) => i.tipo === 'cartao'),
-    saldoInicial: ajustes.saldoInicial || 0,
+    // mês típico: começa com o valor dos ajustes ou, se não houver, com o que deve sobrar no fim deste mês
+    saldoInicial: ajustes.saldoInicial || (projecao ? Math.max(0, projecao.fim) : 0),
     gastoVariavel: ajustes.gastoVariavel ?? gastoEstimado.porMes,
   };
 }
@@ -81,6 +87,11 @@ function iconeItem(i, classe = '') {
 
 // ---------- Render ----------
 function render() {
+  const ajustes = itens.find((i) => i.tipo === 'ajustes') || {};
+  const gastoVar = ajustes.gastoVariavel ?? gastoEstimado.porMes;
+  projecao = saldos.length
+    ? projetarMes({ saldoAgora: saldos.reduce((t, x) => t + x.valor, 0), hojeISO: hojeLocal(), itens, pagamentos, gastoVariavelMensal: gastoVar })
+    : null;
   const plano = montarPlano();
   resultado = planejar(plano);
   const vazio = !itens.some((i) => i.tipo !== 'ajustes');
@@ -88,18 +99,41 @@ function render() {
   $('#plano-vazio').hidden = !vazio;
   $('#plano-conteudo').hidden = vazio;
 
-  // Hero
+  // Hero: com saldo real, mostra a previsão até o fim do mês; sem saldo, o mês típico
   const { resumo } = resultado;
-  $('#plano-sobra').textContent = fmt(resumo.sobra);
-  $('#plano-renda').textContent = fmtCurto(resumo.totalRendas);
-  $('#plano-fixas').textContent = fmtCurto(resumo.totalFixas);
-  $('#plano-variavel').textContent = fmtCurto(resumo.gastoVariavel);
-  const sim = verSugestao ? resultado.final : resultado.base;
-  $('#plano-minimo').textContent = `Menor saldo do mês: ${fmt(sim.min)} no dia ${sim.diaMin}`;
+  const alertas = [];
+  if (projecao) {
+    const p = projecao;
+    $('#plano-hero-rotulo').textContent = `Previsão para o fim do mês (dia ${p.diasRestantes + Number(hojeLocal().slice(8, 10)) - 1})`;
+    $('#plano-sobra').textContent = fmt(p.fim);
+    $('#plano-renda-rot').textContent = 'A receber'; $('#plano-renda').textContent = fmtCurto(p.aReceber);
+    $('#plano-fixas-rot').textContent = 'Contas a pagar'; $('#plano-fixas').textContent = fmtCurto(p.aPagar);
+    $('#plano-variavel-rot').textContent = `Dia a dia (${p.diasRestantes}d)`; $('#plano-variavel').textContent = fmtCurto(p.diaADia);
+    $('#plano-minimo').textContent = `Saldo agora: ${fmt(p.saldoAgora)} · menor até lá: ${fmt(p.min)} no dia ${p.diaMin}`;
+    if (p.min < 0) {
+      const salario = p.eventos.find((e) => e.tipo === 'renda' && e.dia > p.diaMin);
+      alertas.push({ nivel: 'critico', texto: `No dia ${p.diaMin} o saldo das contas pode ficar em ${fmt(p.min)}${salario ? `, antes de cair o ${salario.nome.toLowerCase()} (dia ${salario.dia})` : ''}. Vale segurar gastos ou mudar alguma data.` });
+    } else if (p.fim < 0) {
+      alertas.push({ nivel: 'critico', texto: `Pelo ritmo atual, o mês fecha em ${fmt(p.fim)}.` });
+    }
+  } else {
+    $('#plano-hero-rotulo').textContent = 'Sobra prevista no mês';
+    $('#plano-sobra').textContent = fmt(resumo.sobra);
+    $('#plano-renda-rot').textContent = 'Salários'; $('#plano-renda').textContent = fmtCurto(resumo.totalRendas);
+    $('#plano-fixas-rot').textContent = 'Contas fixas'; $('#plano-fixas').textContent = fmtCurto(resumo.totalFixas);
+    $('#plano-variavel-rot').textContent = 'Dia a dia'; $('#plano-variavel').textContent = fmtCurto(resumo.gastoVariavel);
+    const sim = verSugestao ? resultado.final : resultado.base;
+    $('#plano-minimo').textContent = `Menor saldo do mês: ${fmt(sim.min)} no dia ${sim.diaMin} · informe o saldo das contas para ver a previsão real`;
+    alertas.push(...resultado.alertas);
+  }
+  // estrutural: renda menor que os gastos previstos (vale nos dois modos)
+  if (projecao) alertas.push(...resultado.alertas.filter((a) => /cortar/.test(a.texto)));
 
   // Alertas
-  $('#plano-alertas').innerHTML = resultado.alertas
+  $('#plano-alertas').innerHTML = alertas
     .map((a) => `<div class="alerta alerta-${a.nivel}">${mascote('preocupado')}<span>${esc(a.texto)}</span></div>`).join('');
+
+  renderSaldos();
 
   renderCalendario();
   renderSugestoes();
@@ -204,7 +238,7 @@ function renderListas(plano) {
   $('#ajuste-variavel').textContent = fmt(gv ?? gastoEstimado.porMes);
   $('#ajuste-variavel-origem').textContent = gv != null
     ? 'definido por vocês'
-    : gastoEstimado.meses ? `média dos lançamentos (${gastoEstimado.meses} ${gastoEstimado.meses === 1 ? 'mês' : 'meses'})` : 'sem lançamentos ainda';
+    : gastoEstimado.dias ? `média dos últimos ${gastoEstimado.dias} dias (sem crédito, que já está na fatura)` : 'sem lançamentos ainda';
 
   // Marcar/desmarcar como paga (sem abrir o editor da conta)
   document.querySelectorAll('[data-marcar], [data-desmarcar]').forEach((el) => {
@@ -300,6 +334,29 @@ function statusDoMes(item) {
   return `<br><span class="status-conta pendente">⏳ ${s.diasPara === 0 ? 'Vence hoje' : `Vence em ${s.diasPara} ${s.diasPara === 1 ? 'dia' : 'dias'}`}</span>` + marcar;
 }
 
+// Cartão "Saldo agora": banco (automático) + informado à mão; pessoas sem saldo podem informar
+function renderSaldos() {
+  const el = $('#saldos-lista');
+  const total = saldos.reduce((t, x) => t + x.valor, 0);
+  $('#saldos-total').textContent = saldos.length ? fmt(total) : '';
+  const br = (iso) => iso ? new Date(iso.length > 10 ? iso : iso + 'T12:00:00').toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' }) : '';
+  const linhas = saldos.map((x) => `
+    <div class="saldo-linha">
+      <span class="avatar-mini">${esc(x.pessoa.charAt(0))}</span>
+      <span class="saldo-txt"><b>${esc(x.pessoa)} · ${esc(x.conta)}</b>
+        <small>${x.origem === 'banco' ? `🏦 do banco · ${br(x.atualizado)}` : `✏️ informado em ${br(x.atualizado)} · <span class="link-acao" data-saldo-editar="${x.id}">atualizar</span>`}</small></span>
+      <b class="${x.valor < 0 ? 'negativo' : ''}">${fmt(x.valor)}</b>
+    </div>`).join('');
+  const semSaldo = config.pessoas.filter((p) => !saldos.some((x) => x.pessoa === p));
+  const informar = semSaldo.map((p) => `<button class="btn-sec btn-largo" data-saldo-novo="${esc(p)}">✏️ Informar saldo de ${esc(p)}</button>`).join('');
+  el.innerHTML = (linhas || '<p class="vazio">Conecte os bancos (🏦 Bancos, mais abaixo) ou informe o saldo de cada um para ver a previsão real do mês.</p>') +
+    informar + (saldos.length ? '<p class="dica">O saldo do banco chega com o atraso do Open Finance. Para corrigir na hora, use “atualizar”.</p>' : '');
+  el.querySelectorAll('[data-saldo-novo]').forEach((b) => { b.onclick = () => abrirEditor('saldo', { pessoa: b.dataset.saldoNovo, conta: '' }); });
+  el.querySelectorAll('[data-saldo-editar]').forEach((b) => {
+    b.onclick = () => { const it = itens.find((i) => i.id === Number(b.dataset.saldoEditar)); abrirEditor('saldo', it); };
+  });
+}
+
 function linha(item, titulo, sub, valor, classeValor = '') {
   return `<button class="item" data-editar="${item.id}">
     ${iconeItem(item)}
@@ -354,11 +411,18 @@ const CAMPOS = {
       <select name="categoria">${Object.keys(CATS).filter((c) => !['A classificar', 'Salário'].includes(c))
         .map((c) => `<option value="${esc(c)}" ${(i?.categoria || 'Compras') === c ? 'selected' : ''}>${cat(c).e} ${esc(c)}</option>`).join('')}</select></label>`;
   },
+  saldo: (i) => `
+    <h3>💰 Saldo na conta</h3>
+    <label class="campo"><span>De quem</span>
+      <select name="pessoa">${config.pessoas.map((p) => `<option ${i?.pessoa === p ? 'selected' : ''}>${esc(p)}</option>`).join('')}</select></label>
+    <label class="campo"><span>Conta</span><input name="conta" placeholder="Ex.: Nubank" value="${esc(i?.conta || '')}" autocomplete="off"></label>
+    <label class="campo"><span>Quanto tem na conta agora</span><input name="valor" inputmode="decimal" placeholder="0,00" value="${i?.valor != null && i?.id ? centavosTxt(i.valor) : ''}" required></label>
+    <p class="dica">Só o dinheiro disponível na conta (sem cartão de crédito). Use “-” na frente se estiver negativo. Quando o banco desta conta estiver conectado, o saldo do banco passa a valer.</p>`,
   ajustes: (i) => `
     <h3>⚙️ Ajustes</h3>
     <label class="campo"><span>Quanto costuma ter na conta no dia 1</span><input name="saldoInicial" inputmode="decimal" placeholder="0,00" value="${i?.saldoInicial ? centavosTxt(i.saldoInicial) : ''}"></label>
     <label class="campo"><span>Gasto do dia a dia por mês</span><input name="gastoVariavel" inputmode="decimal" placeholder="Automático: ${centavosTxt(gastoEstimado.porMes)}" value="${i?.gastoVariavel != null ? centavosTxt(i.gastoVariavel) : ''}"></label>
-    <p class="dica">Mercado, iFood, Uber... Deixe em branco para usar a média dos lançamentos (sem contar Casa e Assinaturas, que entram como contas fixas).</p>`,
+    <p class="dica">Mercado, iFood, Uber, Pix do dia a dia... Deixe em branco para usar a média dos últimos 60 dias. Não entram compras no crédito (já estão na fatura), contas fixas, assinaturas e transferências.</p>`,
 };
 
 function centavosTxt(c) { return (c / 100).toFixed(2).replace('.', ','); }
@@ -366,7 +430,7 @@ function centavosTxt(c) { return (c / 100).toFixed(2).replace('.', ','); }
 function abrirEditor(tipo, item = null) {
   editando = { tipo, item };
   $('#plano-campos').innerHTML = CAMPOS[tipo](item);
-  $('#plano-excluir').hidden = !item || tipo === 'ajustes';
+  $('#plano-excluir').hidden = !item?.id || tipo === 'ajustes';
   $('#plano-erro').hidden = true;
   $('#dlg-plano').showModal();
 }

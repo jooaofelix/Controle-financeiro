@@ -243,6 +243,9 @@ async function rotear(req, env, url) {
     return json({ ok: true });
   }
 
+  // ---------- Saldo agora nas contas ----------
+  if (pathname === '/api/saldos' && m === 'GET') return json(await saldosAtuais(env));
+
   // ---------- Notificações (Web Push) ----------
   if (pathname === '/api/push/chave' && m === 'GET') {
     return json({ chave: env.VAPID_PUBLICA || null });
@@ -334,18 +337,26 @@ async function rotear(req, env, url) {
 
 // Gasto do dia a dia (mercado, iFood, Uber...) = média dos 2 últimos meses fechados,
 // sem contar Casa (aluguel/contas), que já entram como contas fixas no planejador.
+// Gasto do dia a dia por mês = média por dia dos últimos 60 dias com dados × 30.
+// Não entram: Casa/Assinaturas (contas fixas), compras no crédito (já estão na fatura do cartão),
+// Apple Pay ainda sem forma de pagamento (quase sempre cartão), pagamentos vinculados a contas
+// previstas e transferências.
 async function gastoVariavelMedio(env) {
   const hoje = hojeSP();
-  const [a, m] = hoje.slice(0, 7).split('-').map(Number);
-  const mesStr = (d) => `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
-  const meses = [mesStr(new Date(Date.UTC(a, m - 2, 1))), mesStr(new Date(Date.UTC(a, m - 3, 1)))];
-  const { results } = await env.DB.prepare(
-    `SELECT substr(data,1,7) AS mes, SUM(valor) AS total FROM transacoes
-     WHERE tipo='despesa' AND categoria NOT IN ('Casa','Assinaturas') AND substr(data,1,7) IN (?, ?)
-     GROUP BY mes`
-  ).bind(...meses).all();
-  if (!results.length) return { porMes: 0, meses: 0 };
-  return { porMes: Math.round(results.reduce((s, r) => s + r.total, 0) / results.length), meses: results.length };
+  const ontem = somaDias(hoje, -1);
+  const inicioJanela = somaDias(hoje, -60);
+  const primeiro = await env.DB.prepare(`SELECT MIN(data) AS d FROM transacoes WHERE data >= ?`).bind(inicioJanela).first();
+  if (!primeiro?.d || primeiro.d > ontem) return { porMes: 0, dias: 0 };
+  const { total } = await env.DB.prepare(
+    `SELECT COALESCE(SUM(valor), 0) AS total FROM transacoes
+     WHERE tipo='despesa' AND data BETWEEN ? AND ?
+       AND categoria NOT IN ('Casa','Assinaturas')
+       AND meio NOT IN ('credito','transferencia')
+       AND NOT (origem = 'atalho' AND meio = '')
+       AND plano_id IS NULL`
+  ).bind(primeiro.d, ontem).first();
+  const dias = Math.round((Date.parse(ontem) - Date.parse(primeiro.d)) / 86400000) + 1;
+  return { porMes: Math.round((total / dias) * 30), dias };
 }
 
 function validarPlano(b) {
@@ -384,6 +395,13 @@ function validarPlano(b) {
       nome: texto(b.nome), valor, total, inicio: b.inicio, dia: dia(b.dia),
       pagamento: ['boleto', 'Nubank', 'Inter'].includes(b.pagamento) ? b.pagamento : 'boleto',
       categoria: CATEGORIAS.includes(b.categoria) ? b.categoria : 'Compras',
+    } };
+  }
+  if (tipo === 'saldo') {
+    if (!texto(b.pessoa, 40)) throw erro(400, 'Informe de quem é a conta');
+    return { tipo, dados: {
+      pessoa: texto(b.pessoa, 40), conta: texto(b.conta, 40) || 'Conta',
+      valor: paraCentavosComSinal(b.valor), data: hojeSP(),
     } };
   }
   if (tipo === 'ajustes') {
@@ -553,6 +571,26 @@ async function atalho(req, env, corpoTxt, tipo) {
 
   await notificarLancamento(env, r);
   return mensagem;
+}
+
+// ---------- Saldo agora: contas correntes do banco + saldos informados à mão ----------
+async function saldosAtuais(env) {
+  const { results: itens } = await env.DB.prepare(`SELECT pessoa, apelido, contas, atualizado_em FROM pluggy_itens`).all();
+  const lista = [];
+  for (const it of itens) {
+    for (const c of JSON.parse(it.contas || '[]')) {
+      if (c.tipo !== 'Conta' || c.saldo == null || /SAVINGS/i.test(c.subtipo || '')) continue;
+      lista.push({ pessoa: it.pessoa, conta: c.nome, valor: c.saldo, origem: 'banco', atualizado: it.atualizado_em });
+    }
+  }
+  const { results: manuais } = await env.DB.prepare(`SELECT id, dados FROM plano WHERE tipo='saldo'`).all();
+  for (const r of manuais) {
+    const d = JSON.parse(r.dados);
+    // se o banco já traz essa conta da pessoa, o valor do banco vale mais
+    if (lista.some((x) => x.pessoa === d.pessoa && x.conta.toLowerCase() === String(d.conta).toLowerCase())) continue;
+    lista.push({ id: r.id, pessoa: d.pessoa, conta: d.conta, valor: d.valor, origem: 'manual', atualizado: d.data });
+  }
+  return lista;
 }
 
 // ---------- Vínculo com contas previstas ----------
@@ -740,7 +778,11 @@ async function sincronizarPessoa(env, pessoa, { manual = false } = {}) {
          ON CONFLICT(item_id) DO UPDATE SET pessoa=excluded.pessoa, apelido=excluded.apelido, status=excluded.status, situacao=excluded.situacao,
            atualizado_em=excluded.atualizado_em, contas=excluded.contas, aviso_em=excluded.aviso_em`
       ).bind(it.id, pessoa, apelido, sit.status, JSON.stringify(sit), item.lastUpdatedAt || null,
-        JSON.stringify(contas.map((c) => ({ nome: nomeDaConta(c, apelido), tipo: c.type === 'CREDIT' ? 'Cartão' : 'Conta', final: String(c.number || '').replace(/\D/g, '').slice(-4) }))), avisoEm).run();
+        JSON.stringify(contas.map((c) => ({
+          nome: nomeDaConta(c, apelido), tipo: c.type === 'CREDIT' ? 'Cartão' : 'Conta', subtipo: c.subtype || '',
+          final: String(c.number || '').replace(/\D/g, '').slice(-4),
+          saldo: typeof c.balance === 'number' ? Math.round(c.balance * 100) : null,
+        }))), avisoEm).run();
       if (sit.nivel === 'erro') continue;
 
       for (const conta of contas) {

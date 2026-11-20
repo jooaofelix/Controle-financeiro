@@ -118,21 +118,26 @@
 
     <div id="plano-conteudo">
       <section class="hero">
-        <div class="hero-topo"><span>Sobra prevista no mês</span></div>
+        <div class="hero-topo"><span id="plano-hero-rotulo">Sobra prevista no mês</span></div>
         <strong id="plano-sobra" class="hero-valor">R$ 0,00</strong>
         <div class="hero-linha tres">
-          <div><span>Salários</span><b id="plano-renda"></b></div>
-          <div><span>Contas fixas</span><b id="plano-fixas"></b></div>
-          <div><span>Dia a dia</span><b id="plano-variavel"></b></div>
+          <div><span id="plano-renda-rot">Salários</span><b id="plano-renda"></b></div>
+          <div><span id="plano-fixas-rot">Contas fixas</span><b id="plano-fixas"></b></div>
+          <div><span id="plano-variavel-rot">Dia a dia</span><b id="plano-variavel"></b></div>
         </div>
         <p id="plano-minimo" class="hero-rodape"></p>
+      </section>
+
+      <section class="card" id="card-saldos">
+        <div class="card-titulo"><h2>💰 Saldo agora</h2><b id="saldos-total"></b></div>
+        <div id="saldos-lista"></div>
       </section>
 
       <div id="plano-alertas"></div>
 
       <section class="card">
         <div class="card-titulo">
-          <h2>Calendário do mês</h2>
+          <h2>Calendário de um mês típico</h2>
           <div class="seg seg-mini" id="cal-modo" hidden>
             <label><input type="radio" name="calmodo" value="hoje"><span>Hoje</span></label>
             <label><input type="radio" name="calmodo" value="sug" checked><span>Sugerido</span></label>

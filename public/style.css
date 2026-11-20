@@ -541,3 +541,12 @@ dialog::backdrop { background: rgb(10 20 15 / 0.45); }
 .contas-resumo { margin: -8px 0 8px; font-size: 13px; color: var(--sutil); padding-right: 84px; }
 .contas-resumo b { color: var(--texto); }
 .proximas .contas-progresso { margin: 0 0 8px; }
+
+/* Saldo agora */
+.saldo-linha { display: flex; align-items: center; gap: 10px; padding: 8px 0; }
+.saldo-linha + .saldo-linha { border-top: 1px solid var(--borda); }
+.avatar-mini { width: 30px; height: 30px; border-radius: 50%; flex: none; display: grid; place-items: center; background: var(--marca); color: var(--marca-tx); font-weight: 800; font-size: 13px; }
+.saldo-txt { flex: 1; min-width: 0; }
+.saldo-txt small { display: block; color: var(--sutil); font-size: 12px; }
+.saldo-linha > b { font-variant-numeric: tabular-nums; }
+#card-saldos .btn-largo { margin-top: 8px; }
