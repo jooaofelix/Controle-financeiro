@@ -71,7 +71,9 @@ function nomeMes(ym, opts = { month: 'long' }) {
 async function carregar() {
   const ano = mes.slice(0, 4) !== hojeLocal().slice(0, 4) ? ' ' + mes.slice(2, 4) : '';
   $('#mes-titulo').textContent = maiuscula(nomeMes(mes, { month: 'short' })) + ano;
-  $('#hero-rotulo').textContent = 'Gasto em ' + nomeMes(mes);
+  // Período fechado do mês: tudo com data de 01 até o último dia conta neste mês (inclusive salário)
+  const ultimo = new Date(+mes.slice(0, 4), +mes.slice(5, 7), 0).getDate();
+  $('#hero-rotulo').innerHTML = `Gasto em ${nomeMes(mes)} <small class="hero-periodo">01/${mes.slice(5, 7)} a ${ultimo}/${mes.slice(5, 7)}</small>`;
   const [atual, anterior, plano] = await Promise.all([
     api('/api/transacoes?mes=' + mes),
     api('/api/transacoes?mes=' + mesDeslocado(mes, -1)).catch(() => []),
