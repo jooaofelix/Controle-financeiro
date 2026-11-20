@@ -5,6 +5,7 @@ import { cartaoNotificacoes } from '/notificacoes.js';
 import { cartaoBancos } from '/bancos.js';
 import { situacaoMes } from '/vinculos.js';
 import { projetarMes } from '/projecao.js';
+import { diaDoSalario } from '/diasuteis.js';
 import { situacao, resumoDividas, contasDoMes, parcelasNoCartao, inicioDe, parcelaDoMes, mesAno } from '/dividas.js';
 
 function hojeLocal() {
@@ -66,7 +67,8 @@ function montarPlano() {
   const ajustes = itens.find((i) => i.tipo === 'ajustes') || {};
   const dividas = itens.filter((i) => i.tipo === 'divida');
   return {
-    rendas: itens.filter((i) => i.tipo === 'renda'),
+    // salário "até o 5º dia útil": usa o dia em que ele cai neste mês
+    rendas: itens.filter((i) => i.tipo === 'renda').map((r) => ({ ...r, dia: diaDoSalario(r, hojeLocal().slice(0, 7)) })),
     // parcelas de boleto deste mês entram como contas fixas (não dá para mudar a data)
     contas: [...itens.filter((i) => i.tipo === 'conta'), ...contasDoMes(dividas, hojeLocal().slice(0, 7))],
     cartoes: itens.filter((i) => i.tipo === 'cartao'),
@@ -212,7 +214,7 @@ function renderSugestoes() {
 }
 
 function renderListas(plano) {
-  $('#lista-rendas').innerHTML = plano.rendas.map((r) => linha(r, `${esc(r.pessoa || r.descricao)}`, `Todo dia ${r.dia}`, `+ ${fmt(r.valor)}`, 'positivo')).join('')
+  $('#lista-rendas').innerHTML = plano.rendas.map((r) => linha(r, `${esc(r.pessoa || r.descricao)}`, (r.diaUtil ? `Até o ${r.diaUtil}º dia útil · este mês: dia ${diaDoSalario(r, hojeLocal().slice(0, 7))}` : `Todo dia ${r.dia}`), `+ ${fmt(r.valor)}`, 'positivo')).join('')
     || '<p class="vazio">Adicione o salário de cada um.</p>';
   $('#lista-contas').innerHTML = plano.contas
     .filter((c) => !c.divida)
@@ -371,7 +373,13 @@ const CAMPOS = {
     <label class="campo"><span>De quem</span>
       <select name="pessoa">${config.pessoas.map((p) => `<option ${i?.pessoa === p ? 'selected' : ''}>${esc(p)}</option>`).join('')}</select></label>
     <label class="campo"><span>Valor líquido</span><input name="valor" inputmode="decimal" placeholder="0,00" value="${i ? centavosTxt(i.valor) : ''}" required></label>
-    <label class="campo"><span>Dia que cai na conta</span><input name="dia" type="number" min="1" max="31" inputmode="numeric" value="${i?.dia ?? 5}" required></label>`,
+    <label class="campo"><span>Quando cai na conta</span>
+      <select name="quando" id="renda-quando">
+        <option value="util" ${!i || i.diaUtil ? 'selected' : ''}>Até o Nº dia útil (varia todo mês)</option>
+        <option value="fixo" ${i && !i.diaUtil ? 'selected' : ''}>Num dia fixo do mês</option>
+      </select></label>
+    <label class="campo"><span id="renda-dia-rot">${!i || i.diaUtil ? 'Qual dia útil' : 'Dia do mês'}</span><input name="dia" type="number" min="1" max="31" inputmode="numeric" value="${i?.diaUtil ?? i?.dia ?? 5}" required></label>
+    <p class="dica" id="renda-dica">${!i || i.diaUtil ? 'Ex.: 5 para “até o 5º dia útil”. O app pula fins de semana e feriados e considera o último dia possível.' : ''}</p>`,
   conta: (i) => `
     <h3>📄 Conta fixa</h3>
     <label class="campo"><span>Nome</span><input name="nome" placeholder="Ex.: Internet, Luz, Aluguel" value="${esc(i?.nome || '')}" required autocomplete="off"></label>
@@ -430,6 +438,12 @@ function centavosTxt(c) { return (c / 100).toFixed(2).replace('.', ','); }
 function abrirEditor(tipo, item = null) {
   editando = { tipo, item };
   $('#plano-campos').innerHTML = CAMPOS[tipo](item);
+  const quando = $('#renda-quando');
+  if (quando) quando.onchange = () => {
+    const util = quando.value === 'util';
+    $('#renda-dia-rot').textContent = util ? 'Qual dia útil' : 'Dia do mês';
+    $('#renda-dica').textContent = util ? 'Ex.: 5 para “até o 5º dia útil”. O app pula fins de semana e feriados e considera o último dia possível.' : '';
+  };
   $('#plano-excluir').hidden = !item?.id || tipo === 'ajustes';
   $('#plano-erro').hidden = true;
   $('#dlg-plano').showModal();

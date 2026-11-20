@@ -3,6 +3,7 @@ import { DurableObject } from 'cloudflare:workers';
 import { paraCentavos } from './valores.js';
 import { ESTATICOS } from './estaticos.js';
 import { enviarPush } from './push.js';
+import { enesimoDiaUtil } from '../public/diasuteis.js';
 import { sugerirVinculo, mesReferencia, diaVencimento, itensPagaveis, nomeItem } from '../public/vinculos.js';
 import { PLUGGY_BASE, clientePluggy, ehPagamentoFatura, classificar, acharDuplicado, situacaoItem, nomeDaConta, categoriaDoPluggy, acharInternas, chaveConta, conexaoDaConta, acharRepetidos } from './pluggy.js';
 
@@ -394,7 +395,10 @@ function validarPlano(b) {
   if (tipo === 'renda') {
     const valor = paraCentavos(b.valor);
     if (!valor) throw erro(400, 'Informe o valor');
-    return { tipo, dados: { descricao: texto(b.descricao) || 'Salário', pessoa: texto(b.pessoa, 40), valor, dia: dia(b.dia) } };
+    // "Até o Nº dia útil": guarda o N; o dia de cada mês é calculado (dia fica como referência deste mês)
+    const util = b.quando === 'util' ? Math.min(10, Math.max(1, parseInt(b.dia, 10) || 5)) : null;
+    return { tipo, dados: { descricao: texto(b.descricao) || 'Salário', pessoa: texto(b.pessoa, 40), valor,
+      dia: util ? enesimoDiaUtil(hojeSP().slice(0, 7), util) : dia(b.dia), ...(util ? { diaUtil: util } : {}) } };
   }
   if (tipo === 'conta') {
     const valor = paraCentavos(b.valor);

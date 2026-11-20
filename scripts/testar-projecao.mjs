@@ -53,4 +53,14 @@ teste('com tudo pago e sem salário a receber, só o dia a dia mexe', () => {
   assert.equal(p.fim, R(1000 - 20 * 5)); // dias 26..30
 });
 
+teste('salário "até o 5º dia útil" cai no dia certo de cada mês', () => {
+  const its = [{ id: 1, tipo: 'renda', valor: R(4000), dia: 5, diaUtil: 5 }];
+  // dezembro/2026: 5º dia útil = dia 7 (seg)
+  const p = projetarMes({ saldoAgora: R(100), hojeISO: '2026-12-05', itens: its });
+  assert.equal(p.eventos[0].dia, 7);
+  assert.equal(p.aReceber, R(4000));
+  // no dia 8 já caiu (está no saldo)
+  assert.equal(projetarMes({ saldoAgora: R(100), hojeISO: '2026-12-08', itens: its }).aReceber, 0);
+});
+
 console.log(`\n${ok} testes de previsão passaram`);

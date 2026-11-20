@@ -3,6 +3,7 @@
 // Testes: node scripts/testar-projecao.mjs
 import { situacaoMes, itensPagaveis } from './vinculos.js';
 import { parcelaDoMes } from './dividas.js';
+import { diaDoSalario } from './diasuteis.js';
 
 const ultimoDiaMes = (ym) => new Date(Date.UTC(+ym.slice(0, 4), +ym.slice(5, 7), 0)).getUTCDate();
 
@@ -14,7 +15,7 @@ export function projetarMes({ saldoAgora, hojeISO, itens, pagamentos = [], gasto
 
   // Salários que ainda vão cair este mês (o de hoje ou antes já está no saldo)
   for (const r of itens.filter((i) => i.tipo === 'renda')) {
-    const dia = Math.min(r.dia, fimMes);
+    const dia = Math.min(diaDoSalario(r, ym), fimMes);
     if (dia > hoje) eventos.push({ dia, valor: r.valor, nome: r.descricao || `Salário ${r.pessoa || ''}`.trim(), tipo: 'renda' });
   }
 
