@@ -503,3 +503,10 @@ dialog::backdrop { background: rgb(10 20 15 / 0.45); }
 .bk-manual summary { cursor: pointer; color: var(--sutil); font-weight: 600; padding: 6px 0; }
 .bk-manual .btn-largo { margin-top: 8px; }
 .banco-pessoa .acoes-notif .btn-sec { padding: 12px 8px; }
+
+/* Como pagaram */
+.meio-linha { display: flex; align-items: center; gap: 10px; padding: 8px 0; }
+.meio-linha + .meio-linha { border-top: 1px solid var(--borda); }
+.meio-txt { flex: 1; min-width: 0; }
+.meio-txt small, .meio-val small { display: block; font-size: 12px; color: var(--sutil); }
+.meio-val { text-align: right; font-variant-numeric: tabular-nums; }

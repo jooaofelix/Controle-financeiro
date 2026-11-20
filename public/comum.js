@@ -47,6 +47,17 @@ export const CATS = {
   'A classificar': { e: '❓', c: 'outros' },
 };
 export const cat = (nome) => CATS[nome] || CATS['Outros'];
+
+// Formas de pagamento
+export const MEIOS = {
+  credito:       { e: '💳', n: 'Crédito' },
+  debito:        { e: '🏧', n: 'Débito' },
+  pix:           { e: '⚡', n: 'Pix' },
+  boleto:        { e: '🧾', n: 'Boleto' },
+  transferencia: { e: '🔁', n: 'Transferência' },
+  dinheiro:      { e: '💵', n: 'Dinheiro' },
+};
+export const meioTxt = (m) => (MEIOS[m] ? `${MEIOS[m].e} ${MEIOS[m].n}` : '');
 export const corCat = (nome) => `var(--c-${cat(nome).c})`;
 
 // ---------- Marcas e ícones ----------

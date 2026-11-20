@@ -1,6 +1,6 @@
 // Testes da integração Meu Pluggy: node scripts/testar-pluggy.mjs
 import assert from 'node:assert/strict';
-import { classificar, acharDuplicado, situacaoItem, nomeDaConta, categoriaDoPluggy } from '../src/pluggy.js';
+import { classificar, acharDuplicado, situacaoItem, nomeDaConta, categoriaDoPluggy, meioDoPluggy } from '../src/pluggy.js';
 
 let ok = 0;
 const teste = (nome, fn) => { fn(); ok++; console.log('✓', nome); };
@@ -81,6 +81,28 @@ teste('situação da conexão: ok, vencendo e com erro', () => {
   assert.equal(v.diasParaVencer, 5);
   assert.equal(situacaoItem({ status: 'LOGIN_ERROR' }, '2026-11-20').nivel, 'erro');
   assert.equal(situacaoItem({ status: 'OUTDATED' }, '2026-11-20').nivel, 'erro');
+});
+
+teste('forma de pagamento: cartão = crédito; conta = Pix, débito, boleto, transferência', () => {
+  assert.equal(classificar(tx({ amount: 30, description: 'UBER' }), cartao).meio, 'credito');
+  assert.equal(classificar(tx({ amount: -30, description: 'Pix enviado - JOAO' }), corrente).meio, 'pix');
+  assert.equal(classificar(tx({ amount: -30, description: 'Qualquer', paymentData: { paymentMethod: 'PIX' } }), corrente).meio, 'pix');
+  assert.equal(classificar(tx({ amount: -30, description: 'Compra no débito - PADARIA' }), corrente).meio, 'debito');
+  assert.equal(classificar(tx({ amount: -230, description: 'Pagamento de boleto - ENEL' }), corrente).meio, 'boleto');
+  assert.equal(classificar(tx({ amount: 1500, description: 'TED recebida' }), corrente).meio, 'transferencia');
+  assert.equal(meioDoPluggy({ description: 'Tarifa' }, corrente), '');
+});
+
+teste('cartão: usa a data real da compra (purchaseDate), não a data da fatura', () => {
+  const r = classificar(tx({ amount: 89, description: 'LOJA X', date: '2026-12-03T00:00:00Z', creditCardMetadata: { purchaseDate: '2026-11-28T15:00:00Z' } }), cartao);
+  assert.equal(r.data, '2026-11-28');
+});
+
+teste('cartão parcelado: cada parcela fica no mês da sua fatura e a descrição avisa', () => {
+  const r = classificar(tx({ amount: 250, description: 'GELADEIRA', date: '2026-12-03T00:00:00Z', creditCardMetadata: { purchaseDate: '2026-08-10T00:00:00Z', totalInstallments: 12 } }), cartao);
+  assert.equal(r.data, '2026-12-03');
+  assert.equal(r.descricao, 'GELADEIRA (parcelado em 12x)');
+  assert.equal(r.parcelas, 12);
 });
 
 console.log(`\n${ok} testes do Meu Pluggy passaram`);

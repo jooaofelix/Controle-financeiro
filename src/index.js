@@ -10,6 +10,7 @@ const CATEGORIAS = [
   'Assinaturas', 'Compras', 'Educação', 'Salário', 'Outros', 'A classificar',
 ];
 const CONTAS = ['Nubank', 'Inter', 'Dinheiro'];
+const MEIOS = ['credito', 'debito', 'pix', 'boleto', 'transferencia', 'dinheiro'];
 
 // Palavras no nome do estabelecimento -> categoria (usado no Atalho do iPhone)
 const REGRAS_CATEGORIA = [
@@ -105,6 +106,8 @@ export class Casa extends DurableObject {
     for (const s of SCHEMA) ctx.storage.sql.exec(s);
     // Migração: id da transação no banco (Open Finance), para não importar duas vezes
     try { ctx.storage.sql.exec(`ALTER TABLE transacoes ADD COLUMN externo_id TEXT`); } catch {}
+    // Forma de pagamento: credito | debito | pix | boleto | transferencia | dinheiro | '' (não informada)
+    try { ctx.storage.sql.exec(`ALTER TABLE transacoes ADD COLUMN meio TEXT NOT NULL DEFAULT ''`); } catch {}
     ctx.storage.sql.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_transacoes_externo ON transacoes(externo_id) WHERE externo_id IS NOT NULL`);
     this.db = bancoSql(ctx.storage.sql);
   }
@@ -169,7 +172,7 @@ async function rotear(req, env, url) {
   await exigirLogin(req, env);
 
   if (pathname === '/api/config' && m === 'GET') {
-    return json({ pessoas: pessoas(env), categorias: CATEGORIAS, contas: CONTAS });
+    return json({ pessoas: pessoas(env), categorias: CATEGORIAS, contas: CONTAS, meios: MEIOS });
   }
   if (pathname === '/api/transacoes' && m === 'GET') {
     const mes = url.searchParams.get('mes') || new Date().toISOString().slice(0, 7);
@@ -182,9 +185,9 @@ async function rotear(req, env, url) {
   if (pathname === '/api/transacoes' && m === 'POST') {
     const t = validar(await req.json(), env);
     const r = await env.DB.prepare(
-      `INSERT INTO transacoes (data, valor, tipo, categoria, pessoa, conta, descricao, origem)
-       VALUES (?, ?, ?, ?, ?, ?, ?, 'manual') RETURNING *`
-    ).bind(t.data, t.valor, t.tipo, t.categoria, t.pessoa, t.conta, t.descricao).first();
+      `INSERT INTO transacoes (data, valor, tipo, categoria, pessoa, conta, descricao, origem, meio)
+       VALUES (?, ?, ?, ?, ?, ?, ?, 'manual', ?) RETURNING *`
+    ).bind(t.data, t.valor, t.tipo, t.categoria, t.pessoa, t.conta, t.descricao, t.meio).first();
     await notificarLancamento(env, r);
     return json(r, 201);
   }
@@ -192,9 +195,9 @@ async function rotear(req, env, url) {
   if (mId && m === 'PUT') {
     const t = validar(await req.json(), env);
     const r = await env.DB.prepare(
-      `UPDATE transacoes SET data=?, valor=?, tipo=?, categoria=?, pessoa=?, conta=?, descricao=?
+      `UPDATE transacoes SET data=?, valor=?, tipo=?, categoria=?, pessoa=?, conta=?, descricao=?, meio=?
        WHERE id=? RETURNING *`
-    ).bind(t.data, t.valor, t.tipo, t.categoria, t.pessoa, t.conta, t.descricao, Number(mId[1])).first();
+    ).bind(t.data, t.valor, t.tipo, t.categoria, t.pessoa, t.conta, t.descricao, t.meio, Number(mId[1])).first();
     if (!r) throw erro(404, 'Lançamento não encontrado');
     return json(r);
   }
@@ -606,8 +609,9 @@ async function sincronizarPessoa(env, pessoa, { manual = false } = {}) {
   if (!cfg) return { erro: 'não configurado' };
   const hoje = hojeSP();
   const primeira = !cfg.ultimo_sync;
-  // Primeira vez: desde o dia 1º do mês. Depois: últimos 20 dias (o banco manda com atraso)
-  const dateFrom = primeira ? hoje.slice(0, 8) + '01' : somaDias(hoje, -20);
+  // Primeira vez: desde o dia 1º do mês. Depois: últimos 45 dias (o banco manda com atraso e assim
+  // datas/formas de pagamento antigas também são corrigidas)
+  const dateFrom = primeira ? hoje.slice(0, 8) + '01' : somaDias(hoje, -45);
   const resumo = { importados: 0, ligados: 0, ignorados: 0, erros: [] };
   const novos = [];
   const itens = JSON.parse(cfg.itens || '[]');
@@ -654,9 +658,17 @@ async function sincronizarPessoa(env, pessoa, { manual = false } = {}) {
         const nomeConta = nomeDaConta(conta, apelido);
         for (const t of await cli.transacoes(conta.id, { dateFrom })) {
           if (!t.id) continue;
-          const ja = await env.DB.prepare(`SELECT id FROM transacoes WHERE externo_id=?`).bind(String(t.id)).first();
-          if (ja) continue;
           const c = classificar(t, conta);
+          const ja = await env.DB.prepare(`SELECT id, data, meio, origem FROM transacoes WHERE externo_id=?`).bind(String(t.id)).first();
+          if (ja) {
+            // Já está no app: completa a forma de pagamento e corrige a data do que veio do banco
+            if (c.importar && ((!ja.meio && c.meio) || (ja.origem === 'banco' && ja.data !== c.data))) {
+              await env.DB.prepare(`UPDATE transacoes SET meio = CASE WHEN meio = '' THEN ? ELSE meio END, data = CASE WHEN origem = 'banco' THEN ? ELSE data END WHERE id=?`)
+                .bind(c.meio, c.data, ja.id).run();
+              resumo.corrigidos = (resumo.corrigidos || 0) + 1;
+            }
+            continue;
+          }
           if (!c.importar) { resumo.ignorados++; continue; }
           const nova = { tipo: c.tipo, valor: c.valor, data: c.data, conta: nomeConta };
           const { results: perto } = await env.DB.prepare(
@@ -664,16 +676,18 @@ async function sincronizarPessoa(env, pessoa, { manual = false } = {}) {
           ).bind(somaDias(c.data, -3), somaDias(c.data, 3)).all();
           const dup = acharDuplicado(nova, perto);
           if (dup) {
-            await env.DB.prepare(`UPDATE transacoes SET externo_id=? WHERE id=?`).bind(String(t.id), dup.id).run();
+            // Compra do Apple Pay/manual confirmada pelo banco: liga e completa a forma de pagamento
+            await env.DB.prepare(`UPDATE transacoes SET externo_id=?, meio = CASE WHEN meio = '' THEN ? ELSE meio END WHERE id=?`)
+              .bind(String(t.id), c.meio, dup.id).run();
             resumo.ligados++;
             continue;
           }
           let categoria = categoriaDoPluggy(c.categoriaPluggy) || categorizar(c.descricao);
           if (c.tipo === 'receita' && categoria === 'A classificar') categoria = 'Outros';
           const r = await env.DB.prepare(
-            `INSERT INTO transacoes (data, valor, tipo, categoria, pessoa, conta, descricao, origem, externo_id)
-             VALUES (?, ?, ?, ?, ?, ?, ?, 'banco', ?) RETURNING *`
-          ).bind(c.data, c.valor, c.tipo, categoria, pessoa, nomeConta, c.descricao, String(t.id)).first();
+            `INSERT INTO transacoes (data, valor, tipo, categoria, pessoa, conta, descricao, origem, externo_id, meio)
+             VALUES (?, ?, ?, ?, ?, ?, ?, 'banco', ?, ?) RETURNING *`
+          ).bind(c.data, c.valor, c.tipo, categoria, pessoa, nomeConta, c.descricao, String(t.id), c.meio).first();
           resumo.importados++;
           novos.push(r);
         }
@@ -786,6 +800,7 @@ function validar(b, env) {
     data: b.data,
     conta: String(b.conta || '').slice(0, 40),
     descricao: String(b.descricao || '').trim().slice(0, 120),
+    meio: MEIOS.includes(b.meio) ? b.meio : '',
   };
 }
 

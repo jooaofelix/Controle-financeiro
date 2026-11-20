@@ -75,6 +75,12 @@
       <div id="grade-categorias" class="grade-categorias"></div>
     </section>
 
+    <!-- Como pagaram: crédito, débito, Pix... -->
+    <section class="card" id="como-pagaram" hidden>
+      <div class="card-titulo"><h2>Como pagaram</h2><span class="sutil" id="como-pagaram-sub"></span></div>
+      <div id="como-pagaram-lista"></div>
+    </section>
+
     <!-- Lançamentos -->
     <section>
       <div class="lista-titulo">
@@ -215,6 +221,8 @@
       <div class="seg" id="chips-pessoa"></div>
       <span class="rotulo">Conta</span>
       <div class="chips" id="chips-conta"></div>
+      <span class="rotulo">Forma de pagamento</span>
+      <div class="chips" id="chips-meio"></div>
       <input name="data" type="date" required>
       <p id="erro-form" class="erro" hidden></p>
       <div class="acoes">

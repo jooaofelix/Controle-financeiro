@@ -18,10 +18,18 @@ let resultado = null;
 let verSugestao = true;
 let diaSelecionado = null;
 let editando = null; // { tipo, item? }
+let lancRecentes = []; // lançamentos deste mês e do anterior (para a fatura atual)
 
 export async function abrirPlano(cfg) {
   config = cfg;
-  const [dados, log] = await Promise.all([api('/api/plano'), api('/api/atalho/log').catch(() => [])]);
+  const ym = hojeLocal().slice(0, 7);
+  const [a, mm] = ym.split('-').map(Number);
+  const ant = `${mm === 1 ? a - 1 : a}-${String(mm === 1 ? 12 : mm - 1).padStart(2, '0')}`;
+  const [dados, log, l1, l2] = await Promise.all([
+    api('/api/plano'), api('/api/atalho/log').catch(() => []),
+    api('/api/transacoes?mes=' + ym).catch(() => []), api('/api/transacoes?mes=' + ant).catch(() => []),
+  ]);
+  lancRecentes = [...l1, ...l2];
   itens = dados.itens;
   gastoEstimado = dados.gastoVariavel;
   render();
@@ -177,8 +185,10 @@ function renderListas(plano) {
   $('#lista-cartoes').innerHTML = resultado.cartoes.map((c) => {
     const orig = plano.cartoes.find((x) => x.id === c.id);
     const parcelas = parcelasNoCartao(itens.filter((i) => i.tipo === 'divida'), orig.nome, hojeLocal().slice(0, 7));
+    const fat = faturaAtual(orig);
     return linha(orig, esc(c.nome),
       `Fecha dia ${orig.fechamento} · vence dia ${orig.vencimento}<br><span class="compra">🛍️ Melhor dia de compra: <b>dia ${(orig.fechamento % DIAS) + 1}</b> (até ${c.prazo} dias para pagar)</span>` +
+      (fat.total ? `<br>💳 <b>Fatura atual: ${fmt(fat.total)}</b> <small class="sutil">(${fat.qtd} compras de ${fat.de} a ${fat.ate})</small>` : '') +
       (parcelas ? `<br>🧾 Inclui ${fmt(parcelas)} em parcelas este mês` : ''),
       c.valor ? fmt(c.valor) : '');
   }).join('') || '<p class="vazio">Cadastre Nubank e Inter para saber o melhor dia de compra.</p>';
@@ -196,6 +206,24 @@ function renderListas(plano) {
   document.querySelectorAll('[data-editar]').forEach((b) => {
     b.onclick = () => { const it = itens.find((i) => i.id === Number(b.dataset.editar)); abrirEditor(it.tipo, it); };
   });
+}
+
+// Soma as compras no crédito deste cartão desde o último fechamento da fatura
+function faturaAtual(cartao) {
+  const hoje = new Date();
+  const fech = cartao.fechamento;
+  const dia = (ano, mes, d) => new Date(ano, mes, Math.min(d, new Date(ano, mes + 1, 0).getDate()));
+  const y = hoje.getFullYear(), m = hoje.getMonth();
+  const fechEsteMes = dia(y, m, fech);
+  const ini = hoje > fechEsteMes ? new Date(fechEsteMes.getTime() + 86400000) : new Date(dia(y, m - 1, fech).getTime() + 86400000);
+  const fim = hoje > fechEsteMes ? dia(y, m + 1, fech) : fechEsteMes;
+  const iso = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  const de = iso(ini), ate = iso(fim);
+  const nome = String(cartao.nome || '').toLowerCase();
+  const compras = lancRecentes.filter((t) => t.tipo === 'despesa' && t.meio === 'credito'
+    && String(t.conta || '').toLowerCase() === nome && t.data >= de && t.data <= ate);
+  const br = (s) => s.slice(8, 10) + '/' + s.slice(5, 7);
+  return { total: compras.reduce((x, t) => x + t.valor, 0), qtd: compras.length, de: br(de), ate: br(ate) };
 }
 
 function renderDividas() {

@@ -1,5 +1,5 @@
 import {
-  $, fmt, esc, api, aoDeslogar, CATS, cat, corCat, marcaDe, iconeMarca, iconeCategoria, MARCAS, mascote, toast,
+  $, fmt, esc, api, aoDeslogar, CATS, cat, corCat, marcaDe, iconeMarca, iconeCategoria, MARCAS, mascote, toast, MEIOS,
 } from '/comum.js';
 import { contasDoMes } from '/dividas.js';
 import { registrarSW, bannerInicio } from '/notificacoes.js';
@@ -127,7 +127,37 @@ function render() {
 
   renderProximas();
   renderCategorias(gastos, totalG);
+  renderComoPagaram(gastos, totalG);
   renderLista();
+}
+
+// Gastos do mês por forma de pagamento; crédito separado por cartão
+function renderComoPagaram(gastos, totalG) {
+  const sec = $('#como-pagaram');
+  sec.hidden = !gastos.length;
+  if (!gastos.length) return;
+  const grupos = {};
+  for (const t of gastos) {
+    const k = t.meio || '';
+    (grupos[k] ||= { total: 0, contas: {} }).total += t.valor;
+    if (k === 'credito') grupos[k].contas[t.conta || 'Cartão'] = (grupos[k].contas[t.conta || 'Cartão'] || 0) + t.valor;
+  }
+  const ordem = [...Object.keys(MEIOS), ''];
+  const semInfo = grupos['']?.total || 0;
+  $('#como-pagaram-sub').textContent = semInfo ? `${fmt(semInfo)} sem forma informada` : '';
+  $('#como-pagaram-lista').innerHTML = ordem.filter((k) => grupos[k]).map((k) => {
+    const g = grupos[k];
+    const m = MEIOS[k] || { e: '❔', n: 'Não informado' };
+    const sub = k === 'credito'
+      ? Object.entries(g.contas).map(([c, v]) => `${esc(c)} ${fmt(v)}`).join(' · ')
+      : k === '' ? 'Compras do iPhone ficam aqui até o banco confirmar' : '';
+    const p = totalG ? Math.round((g.total / totalG) * 100) : 0;
+    return `<div class="meio-linha">
+      <span class="icone icone-p" style="--c:var(--c-outros)">${m.e}</span>
+      <span class="meio-txt"><b>${m.n}</b>${sub ? `<small>${sub}</small>` : ''}</span>
+      <span class="meio-val"><b>${fmt(g.total)}</b><small>${p}%</small></span>
+    </div>`;
+  }).join('');
 }
 
 // Contas e faturas que vencem nos próximos 7 dias (do planejador)
@@ -229,7 +259,7 @@ function renderLista() {
       ${iconeTransacao(t)}
       <span class="meio">
         <span class="desc">${esc(t.descricao || t.categoria)}</span>
-        <span class="meta">${nomeCat} · ${esc(t.pessoa)}${t.conta ? ' · ' + esc(t.conta) : ''}${t.origem === 'atalho' ? ' · iPhone' : ''}</span>
+        <span class="meta">${MEIOS[t.meio] ? `<span title="${MEIOS[t.meio].n}">${MEIOS[t.meio].e}</span> ` : ''}${nomeCat} · ${esc(t.pessoa)}${t.conta ? ' · ' + esc(t.conta) : ''}${t.origem === 'atalho' ? ' · iPhone' : t.origem === 'banco' ? ' · 🏦' : ''}</span>
       </span>
       <span class="valor ${receita ? 'positivo' : ''}">${receita ? '+' : '−'} ${fmt(t.valor)}</span>`;
     b.onclick = () => abrirForm(t);
@@ -250,6 +280,9 @@ function montarFormulario() {
     const ic = m ? iconeMarca(m) : `<span class="icone" style="--c:var(--c-casa)">💵</span>`;
     return `<label><input type="radio" name="conta" value="${esc(c)}"><span>${ic}${esc(c)}</span></label>`;
   }).join('');
+
+  $('#chips-meio').innerHTML = Object.entries(MEIOS)
+    .map(([k, m]) => `<label><input type="radio" name="meio" value="${k}"><span><span class="icone" style="--c:var(--c-outros)">${m.e}</span>${m.n}</span></label>`).join('');
 
   $('#form').descricao.addEventListener('input', atualizarIconeDesc);
   $('#chips-categoria').addEventListener('change', atualizarIconeDesc);
@@ -279,6 +312,7 @@ function abrirForm(t = null) {
   marcar('categoria', t?.categoria || '');
   marcar('pessoa', t?.pessoa || lsGet('pessoa') || config.pessoas[0]);
   marcar('conta', t?.conta || lsGet('conta') || '');
+  marcar('meio', t ? (t.meio || '') : (lsGet('meio') || ''));
   f.data.value = t?.data || hojeLocal();
   atualizarIconeDesc();
   $('#dlg').showModal();
@@ -299,6 +333,7 @@ $('#form').addEventListener('submit', async (e) => {
     categoria: f.categoria.value || 'Outros',
     pessoa: f.pessoa.value,
     conta: f.conta.value,
+    meio: f.meio.value || '',
     data: f.data.value,
   };
   try {
@@ -306,6 +341,7 @@ $('#form').addEventListener('submit', async (e) => {
     else await api('/api/transacoes', { method: 'POST', body: JSON.stringify(dados) });
     lsSet('pessoa', dados.pessoa);
     lsSet('conta', dados.conta);
+    lsSet('meio', dados.meio);
     $('#dlg').close();
     toast(editandoId ? 'joinha' : 'recibo', editandoId ? 'Lançamento atualizado!' : 'Anotado!');
     if (dados.data.slice(0, 7) !== mes) mes = dados.data.slice(0, 7);

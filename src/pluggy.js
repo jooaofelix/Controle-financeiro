@@ -45,6 +45,21 @@ export function categoriaDoPluggy(cat) {
 const IGNORAR_CATEGORIA = /credit card payment|same person|same ownership|own account|investment|savings|automatic investment/i;
 const IGNORAR_DESCRICAO = /pagamento (de |da )?fatura|pgto fatura|fatura do cart|pagamento recebido|aplica[cç][aã]o|resgate|caixinha|rdb|cdb|poupan[cç]a|transfer[eê]ncia entre contas|mesma titularidade/i;
 
+// Forma de pagamento: 'credito' | 'debito' | 'pix' | 'boleto' | 'transferencia' | '' (desconhecida)
+export function meioDoPluggy(t, conta) {
+  if (conta?.type === 'CREDIT') return 'credito';
+  const pm = String(t?.paymentData?.paymentMethod || '').toUpperCase();
+  if (pm === 'PIX') return 'pix';
+  if (pm === 'BOLETO') return 'boleto';
+  if (['TED', 'DOC', 'TEF', 'TRANSFER'].includes(pm)) return 'transferencia';
+  const d = String(t?.description || '').toLowerCase();
+  if (/\bpix\b/.test(d)) return 'pix';
+  if (/d[eé]bito|compra no cart|compra cart|compra com cart/.test(d)) return 'debito';
+  if (/boleto|pagamento de (conta|t[ií]tulo)|conv[eê]nio|tributo|concession/.test(d)) return 'boleto';
+  if (/\bted\b|\bdoc\b|transfer/.test(d)) return 'transferencia';
+  return '';
+}
+
 // Decide o que fazer com uma transação do Pluggy.
 // Devolve { importar: false, motivo } ou { importar: true, tipo, valor, data, descricao, categoriaPluggy, cartao }
 export function classificar(t, conta) {
@@ -63,13 +78,22 @@ export function classificar(t, conta) {
     if (t.amount === 0) return { importar: false, motivo: 'valor zero' };
     tipo = t.amount < 0 ? 'despesa' : 'receita';
   }
+  // Data de verdade do gasto: no cartão o banco pode mandar a data em que entrou na fatura;
+  // a compra aconteceu em purchaseDate. Parceladas ficam no mês de cada parcela (data da fatura).
+  const parcelas = Number(t.creditCardMetadata?.totalInstallments || 0);
+  const compra = t.creditCardMetadata?.purchaseDate;
+  let data = String(t.date).slice(0, 10);
+  if (cartao && compra && !(parcelas > 1)) data = String(compra).slice(0, 10);
+  const sufixo = cartao && parcelas > 1 && !/\d+\s*\/\s*\d+/.test(descricao) ? ` (parcelado em ${parcelas}x)` : '';
   return {
     importar: true,
     tipo,
     valor: Math.round(Math.abs(t.amount) * 100),
-    data: String(t.date).slice(0, 10),
-    descricao: descricao.slice(0, 120),
+    data,
+    descricao: (descricao.slice(0, 120 - sufixo.length) + sufixo).trim(),
     categoriaPluggy: t.category || '',
+    meio: meioDoPluggy(t, conta),
+    parcelas,
     cartao,
   };
 }
