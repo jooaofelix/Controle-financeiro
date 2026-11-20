@@ -422,6 +422,7 @@ dialog::backdrop { background: rgb(10 20 15 / 0.45); }
 .prox-item { display: flex; align-items: center; gap: 10px; padding: 7px 0; font-size: 15px; }
 .prox-item + .prox-item { border-top: 1px solid var(--borda); }
 .prox-item > span:not(.icone) { flex: 1; min-width: 0; font-weight: 600; }
+.prox-item > .check + .icone { margin-left: -2px; }
 .prox-item small { display: block; font-weight: 400; font-size: 13px; color: var(--sutil); }
 .prox-item > b { font-variant-numeric: tabular-nums; }
 
@@ -522,3 +523,21 @@ dialog::backdrop { background: rgb(10 20 15 / 0.45); }
 .status-conta.pendente { color: var(--sutil); background: var(--bg); }
 .link-acao { font-size: 12px; font-weight: 700; color: var(--positivo); text-decoration: underline; cursor: pointer; margin-left: 4px; }
 .item .meta .vinc { color: var(--positivo); font-weight: 700; }
+
+/* Contas do mês com check */
+.contas-progresso { height: 6px; border-radius: 3px; background: var(--bg); overflow: hidden; margin: -6px 0 8px; }
+.contas-progresso i { display: block; height: 100%; width: 0; background: var(--barra); border-radius: 3px; transition: width .3s; }
+.check {
+  width: 28px; height: 28px; flex: none; border-radius: 50%; border: 2px solid var(--borda); background: var(--card);
+  display: grid; place-items: center; font: 900 15px/1 "Inter Display", sans-serif; color: var(--marca-tx); cursor: pointer; padding: 0;
+}
+.check.on { background: var(--marca); border-color: var(--marca); }
+.prox-item.atrasada .check { border-color: var(--negativo); }
+.prox-item.paga > span:not(.icone):not(.check) { color: var(--sutil); text-decoration: line-through; text-decoration-color: color-mix(in srgb, var(--sutil) 60%, transparent); }
+.prox-item.paga > b { color: var(--sutil); font-weight: 600; }
+.prox-item.paga .icone { opacity: .55; }
+.btn-check { display: inline-block; margin-top: 4px; font-size: 12px; font-weight: 700; border: 1.5px solid var(--borda); border-radius: 999px; padding: 2px 10px; cursor: pointer; color: var(--texto); }
+.btn-check.on { border-color: var(--marca); background: var(--marca); color: var(--marca-tx); }
+.contas-resumo { margin: -8px 0 8px; font-size: 13px; color: var(--sutil); padding-right: 84px; }
+.contas-resumo b { color: var(--texto); }
+.proximas .contas-progresso { margin: 0 0 8px; }

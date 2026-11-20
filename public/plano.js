@@ -291,10 +291,11 @@ function statusDoMes(item) {
   if (s.estado === 'paga') {
     const p = s.pagamentos[0];
     const manual = s.pagamentos.every((x) => x.marcada && x.origem === 'manual');
-    return `<br><span class="status-conta paga">✅ ${manual ? 'Marcada como paga' : `Paga em ${br(p.data)} · ${fmt(s.pago)}`}</span>` +
-      (manual ? ` <span class="link-acao" data-desmarcar="${item.id}" data-mes="${mes}">desfazer</span>` : '');
+    return manual
+      ? `<br><span class="btn-check on" data-desmarcar="${item.id}" data-mes="${mes}">✓ Paga · desfazer</span>`
+      : `<br><span class="status-conta paga">✅ Paga em ${br(p.data)} · ${fmt(s.pago)}</span>`;
   }
-  const marcar = ` <span class="link-acao" data-marcar="${item.id}" data-mes="${mes}">marcar como paga</span>`;
+  const marcar = ` <span class="btn-check" data-marcar="${item.id}" data-mes="${mes}">○ marcar como paga</span>`;
   if (s.estado === 'atrasada') return '<br><span class="status-conta atrasada">⚠️ Venceu sem pagamento vinculado</span>' + marcar;
   return `<br><span class="status-conta pendente">⏳ ${s.diasPara === 0 ? 'Vence hoje' : `Vence em ${s.diasPara} ${s.diasPara === 1 ? 'dia' : 'dias'}`}</span>` + marcar;
 }

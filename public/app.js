@@ -172,32 +172,59 @@ function pagaveisNoMes(ym) {
 const proxMes = (ym) => { const [a, m] = ym.split('-').map(Number); return m === 12 ? `${a + 1}-01` : `${a}-${String(m + 1).padStart(2, '0')}`; };
 
 // Contas e faturas que vencem nos próximos 7 dias (do planejador)
+// Lista de contas do mês com check: atrasadas, próximas e pagas (toque na bolinha para marcar)
 function renderProximas() {
   const card = $('#proximas');
   const hojeISO = hojeLocal();
   const ym = hojeISO.slice(0, 7);
   if (mes !== ym) { card.hidden = true; return; }
-  const doMes = situacaoMes(pagaveisNoMes(ym), pagamentosPlano, ym, hojeISO);
-  const seguinte = situacaoMes(pagaveisNoMes(proxMes(ym)), pagamentosPlano, proxMes(ym), hojeISO);
-  const atrasadas = doMes.filter((c) => c.estado === 'atrasada');
-  const breve = [...doMes, ...seguinte].filter((c) => c.estado === 'pendente' && c.diasPara >= 0 && c.diasPara <= 7)
-    .sort((x, y) => x.diasPara - y.diasPara);
-  const lista = [...atrasadas, ...breve];
-  const pagas = doMes.filter((c) => c.estado === 'paga').length;
-  card.hidden = !lista.length && !doMes.length;
+  const doMes = situacaoMes(pagaveisNoMes(ym), pagamentosPlano, ym, hojeISO).map((c) => ({ ...c, mes: ym }));
+  // contas do mês que vem que vencem nos próximos 7 dias (ex.: hoje é 28 e a internet vence dia 2)
+  const seguinte = situacaoMes(pagaveisNoMes(proxMes(ym)), pagamentosPlano, proxMes(ym), hojeISO)
+    .filter((c) => c.estado !== 'paga' && c.diasPara <= 7).map((c) => ({ ...c, mes: proxMes(ym) }));
+  const ordem = { atrasada: 0, pendente: 1, paga: 2 };
+  const lista = [...doMes, ...seguinte].sort((x, y) => ordem[x.estado] - ordem[y.estado] || x.diasPara - y.diasPara);
+  card.hidden = !lista.length;
   if (card.hidden) return;
-  $('#proximas-total').textContent = lista.length ? fmt(lista.reduce((s, c) => s + c.previsto, 0)) : '';
+
+  const pagas = doMes.filter((c) => c.estado === 'paga').length;
+  const falta = doMes.filter((c) => c.estado !== 'paga').reduce((s, c) => s + c.previsto, 0);
+  $('#proximas-total').innerHTML = `<b>${pagas} de ${doMes.length} pagas</b>${falta ? ` · faltam ${fmt(falta)}` : ' · tudo pago 🎉'}`;
+  $('#proximas-barra').style.width = (doMes.length ? Math.round((pagas / doMes.length) * 100) : 0) + '%';
+
   const item = (id) => itensPlano.find((i) => i.id === id) || {};
-  const resumo = doMes.length ? `<p class="prox-resumo">✅ ${pagas} de ${doMes.length} contas do mês pagas</p>` : '';
+  const br = (iso) => iso.slice(8, 10) + '/' + iso.slice(5, 7);
   $('#proximas-lista').innerHTML = lista.map((c) => {
     const it = item(c.id);
     const m = marcaDe(c.nome);
     const ic = m ? iconeMarca(m, 'icone-p') : iconeCategoria(it.categoria || 'Casa', 'icone-p');
     const dia = Number(c.venc.slice(8, 10));
-    const quando = c.estado === 'atrasada' ? `<b class="negativo">venceu dia ${dia} · sem pagamento</b>`
-      : c.diasPara === 0 ? '<b class="negativo">vence hoje</b>' : c.diasPara === 1 ? '<b>amanhã</b>' : `dia ${dia} · em ${c.diasPara} dias`;
-    return `<div class="prox-item ${c.estado}">${ic}<span>${esc(c.nome)}<small>${quando}</small></span><b>${fmt(c.previsto)}</b></div>`;
-  }).join('') + (lista.length ? '' : '<p class="vazio">Nada vencendo nos próximos 7 dias. 🎉</p>') + resumo;
+    const p = c.pagamentos[0];
+    const quando = c.estado === 'paga'
+      ? (p?.marcada && p.origem === 'manual' ? 'marcada como paga' : `paga em ${br(p.data)}${c.pago !== c.previsto ? ' · ' + fmt(c.pago) : ''}`)
+      : c.estado === 'atrasada' ? `<b class="negativo">venceu dia ${dia}</b>`
+      : c.diasPara === 0 ? '<b class="negativo">vence hoje</b>' : c.diasPara === 1 ? '<b>vence amanhã</b>' : `dia ${dia} · em ${c.diasPara} dias`;
+    const porLancamento = c.estado === 'paga' && c.pagamentos.some((x) => !x.marcada);
+    return `<div class="prox-item ${c.estado}">
+      <button class="check ${c.estado === 'paga' ? 'on' : ''}" data-check="${c.id}" data-mes="${c.mes}" data-lanc="${porLancamento ? esc(p?.descricao || 'um lançamento') : ''}"
+        aria-label="${c.estado === 'paga' ? 'Desmarcar' : 'Marcar'} ${esc(c.nome)} como paga">${c.estado === 'paga' ? '✓' : ''}</button>
+      ${ic}<span>${esc(c.nome)}<small>${quando}</small></span><b>${fmt(c.previsto)}</b></div>`;
+  }).join('');
+
+  $('#proximas-lista').querySelectorAll('[data-check]').forEach((btn) => {
+    btn.onclick = async () => {
+      const { check: id, mes: m, lanc } = btn.dataset;
+      if (lanc) { toast('pensando', `Paga pelo lançamento “${lanc}”. Para desfazer, edite esse lançamento.`); return; }
+      const marcar = !btn.classList.contains('on');
+      btn.classList.toggle('on', marcar); btn.textContent = marcar ? '✓' : ''; // resposta imediata
+      try {
+        if (marcar) await api(`/api/plano/${id}/paga`, { method: 'POST', body: JSON.stringify({ mes: m }) });
+        else await api(`/api/plano/${id}/paga?mes=${m}`, { method: 'DELETE' });
+        if (marcar) toast('recibo', 'Conta paga! ✅');
+        await carregar();
+      } catch (e) { toast('preocupado', e.message); await carregar(); }
+    };
+  });
 }
 
 function renderCategorias(gastos, totalG) {
