@@ -502,7 +502,7 @@ function renderRole(presetNovo) {
   $('#role-de').value = de; $('#role-ate').value = ate; $('#role-de').min = hoje; $('#role-ate').min = de;
   const r = calcularRole(de, ate);
   const ok = r.livre > 0;
-  $('#role-mascote').innerHTML = mascote(ok ? 'comemora' : 'preocupado', 'role-mascote');
+  $('#role-mascote').innerHTML = mascote(ok ? 'role' : 'preocupado', 'role-mascote' + (ok ? ' role-festa' : ''));
   const periodo = r.dias === 1 ? `em ${de === hoje ? 'hoje' : br(de)}` : `de ${br(de)} a ${br(ate)} (${r.dias} dias)`;
   const separado = r.contas.reduce((t, c) => t - c.valor, 0);
   res.innerHTML = ok ? `

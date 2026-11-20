@@ -24,11 +24,11 @@ function renderMini() {
   const t = total();
   const n = nivelDoColchao(t);
   b.innerHTML = colchoes.length ? `
-    <span class="colchao-emoji">${n.emoji}</span>
+    ${mascote('colchao', 'colchao-mascote')}
     <span class="colchao-txt"><small>Colchão · ${esc(n.nome)}</small><b>${fmt(t)} guardados</b>
       <i class="colchao-barra"><i style="width:${Math.round(n.progresso * 100)}%"></i></i></span>
     <span class="colchao-seta">›</span>`
-  : `<span class="colchao-emoji">🛏️</span>
+  : `${mascote('colchao', 'colchao-mascote')}
     <span class="colchao-txt"><small>Colchão</small><b>Guardar dinheiro debaixo do colchão</b><span class="sutil">Viagem, reserva, carro… crie o primeiro</span></span>
     <span class="colchao-seta">›</span>`;
   b.onclick = () => (colchoes.length ? abrirFolha() : editarColchao());
@@ -41,8 +41,8 @@ function renderFolha() {
   const n = nivelDoColchao(t);
   $('#colchao-topo').innerHTML = `
     <div class="colchao-nivel">
-      <span class="colchao-grande">${n.emoji}</span>
-      <div><small>Vocês têm um</small><b>${esc(n.nome)}</b><span>${esc(n.frase)}</span></div>
+      ${mascote('colchao', 'colchao-mascote-g')}
+      <div><small>Vocês têm um</small><b>${n.emoji} ${esc(n.nome)}</b><span>${esc(n.frase)}</span></div>
     </div>
     <div class="colchao-total"><b>${fmt(t)}</b><span>guardados debaixo do colchão</span></div>
     ${n.proximo ? `<div class="colchao-prox"><i class="colchao-barra"><i style="width:${Math.round(n.progresso * 100)}%"></i></i>

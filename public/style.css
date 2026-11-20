@@ -626,7 +626,7 @@ dialog::backdrop { background: rgb(10 20 15 / 0.45); }
 .colchao-txt .sutil { font-size: 12.5px; }
 .colchao-seta { font-size: 22px; color: var(--sutil); }
 .colchao-barra { display: block; height: 6px; border-radius: 99px; background: var(--bg); overflow: hidden; margin-top: 4px; }
-.colchao-barra > i { display: block; height: 100%; border-radius: 99px; background: var(--verde, #2bb673); }
+.colchao-barra > i { display: block; height: 100%; border-radius: 99px; background: var(--marca); }
 .colchao-nivel { display: flex; gap: 12px; align-items: center; margin: 4px 2px 10px; }
 .colchao-grande { font-size: 44px; line-height: 1; }
 .colchao-nivel div { display: grid; }
@@ -658,3 +658,8 @@ dialog::backdrop { background: rgb(10 20 15 / 0.45); }
 .mov-sub { margin: 0 4px 10px; font-size: 13px; }
 .campo-nota { width: 100%; margin-top: 10px; border: 0; border-radius: 12px; padding: 11px 12px; background: var(--bg); color: var(--texto); font: inherit; }
 .ed-emojis span { font-size: 20px; padding: 6px 10px; }
+
+/* mascotes novos: colchão e rolê */
+.colchao-mascote { width: 64px; flex: none; margin: -6px -2px -6px -4px; }
+.colchao-mascote-g { width: 112px; flex: none; }
+.role .role-mascote.role-festa { width: 84px; top: -40px; right: 6px; }
