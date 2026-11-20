@@ -78,6 +78,7 @@ async function carregar() {
     api('/api/plano').catch(() => ({ itens: [] })),
   ]);
   transacoes = atual;
+  carregarRepetidos();
   itensPlano = plano.itens;
   pagamentosPlano = plano.pagamentos || [];
   totalMesAnterior = soma(anterior.filter((t) => t.tipo === 'despesa'));
@@ -429,6 +430,59 @@ function atualizarTipoForm() {
   if (entre) { $('#campo-vinculo').hidden = true; $('#sel-vinculo').value = ''; }
   else $('#campo-vinculo').hidden = !itensPagaveis(itensPlano).length;
 }
+
+// ---------- Repetidos ----------
+let repetidos = [];
+async function carregarRepetidos() {
+  repetidos = await api('/api/repetidos').catch(() => []);
+  const av = $('#aviso-repetidos');
+  av.hidden = !repetidos.length;
+  av.innerHTML = `${mascote('pensando')}<span><b>${repetidos.length} ${repetidos.length === 1 ? 'lançamento parece repetido' : 'lançamentos parecem repetidos'}.</b> Toque para revisar.</span>`;
+  av.onclick = abrirRepetidos;
+  if ($('#dlg-rep').open) renderRepetidos();
+}
+function linhaRep(t, rotulo) {
+  const sinal = (t.tipo_original || t.tipo) === 'receita' ? '+' : '−';
+  const origem = t.origem === 'banco' ? '🏦 banco' : t.origem === 'atalho' ? '📱 iPhone' : '✍️ à mão';
+  const [a, m, d] = t.data.split('-');
+  return `<div class="rep-linha"><small>${rotulo}</small><b>${esc(t.descricao || t.categoria)}</b>
+    <span>${sinal} ${fmt(t.valor)} · ${d}/${m} · ${esc(t.pessoa)}${t.conta ? ' · ' + esc(t.conta) : ''} · ${origem}</span></div>`;
+}
+function renderRepetidos() {
+  $('#rep-todos').hidden = repetidos.length < 2;
+  $('#rep-todos').textContent = `Apagar todas as ${repetidos.length} cópias`;
+  $('#rep-lista').innerHTML = repetidos.length ? repetidos.map((r, k) => `
+    <div class="rep-item ${r.certeza}">
+      <p class="rep-motivo">${r.certeza === 'alta' ? '🔴' : '🟡'} ${esc(r.motivo)}</p>
+      ${linhaRep(r.manterT, r.juntar ? 'Fica (ligado ao banco)' : 'Fica')}
+      ${linhaRep(r.apagarT, 'Sai (cópia)')}
+      <div class="rep-acoes">
+        <button class="btn-sec" data-ign="${k}">Não é repetido</button>
+        <button class="btn-primario" data-res="${k}">Apagar a cópia</button>
+      </div>
+    </div>`).join('') : '<p class="vazio">Tudo certo, nada repetido. 🎉</p>';
+  $('#rep-lista').querySelectorAll('[data-res]').forEach((b) => { b.onclick = () => resolverRep([repetidos[b.dataset.res]]); });
+  $('#rep-lista').querySelectorAll('[data-ign]').forEach((b) => {
+    b.onclick = async () => {
+      const r = repetidos[b.dataset.ign];
+      await api('/api/repetidos/ignorar', { method: 'POST', body: JSON.stringify({ manter: r.manter, apagar: r.apagar }) });
+      await carregarRepetidos();
+    };
+  });
+}
+async function resolverRep(lista) {
+  for (const r of lista) {
+    await api('/api/repetidos/resolver', { method: 'POST', body: JSON.stringify({ manter: r.manter, apagar: r.apagar }) }).catch(() => {});
+  }
+  toast('joinha', lista.length === 1 ? 'Cópia apagada!' : `${lista.length} cópias apagadas!`);
+  await carregar();
+  await carregarRepetidos();
+  if (!repetidos.length) $('#dlg-rep').close();
+}
+function abrirRepetidos() { renderRepetidos(); $('#dlg-rep').showModal(); }
+$('#rep-fechar').onclick = () => $('#dlg-rep').close();
+$('#rep-todos').onclick = () => { if (confirm(`Apagar as ${repetidos.length} cópias? Fica um de cada.`)) resolverRep([...repetidos]); };
+$('#dlg-rep').addEventListener('click', (e) => { if (e.target === $('#dlg-rep')) $('#dlg-rep').close(); });
 
 $('#btn-novo').onclick = () => abrirForm();
 $('#btn-cancelar').onclick = () => $('#dlg').close();

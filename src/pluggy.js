@@ -145,17 +145,85 @@ export function classificar(t, conta) {
 
 // Procura um lançamento já existente (Apple Pay ou manual) que seja a mesma movimentação:
 // mesmo tipo e valor, até 3 dias de diferença e, se os dois tiverem conta, a mesma conta.
-export function acharDuplicado(nova, existentes) {
+// contasConhecidas: nomes de contas que vêm do banco (Nubank, Inter...). Um lançamento do Atalho com um nome
+// de cartão desconhecido ("Mastercard Black") pode ser a mesma compra; um com outra conta conhecida, não.
+export function acharDuplicado(nova, existentes, contasConhecidas = null) {
   const dia = (s) => Date.UTC(+s.slice(0, 4), +s.slice(5, 7) - 1, +s.slice(8, 10)) / 86400000;
   let melhor = null;
   for (const e of existentes) {
     if (e.externo_id || e.tipo !== nova.tipo || e.valor !== nova.valor) continue;
-    if (nova.conta && e.conta && nova.conta !== e.conta) continue;
+    if (nova.conta && e.conta && nova.conta !== e.conta && (!contasConhecidas || contasConhecidas.has(e.conta))) continue;
     const dif = Math.abs(dia(e.data) - dia(nova.data));
     if (dif > 3) continue;
     if (!melhor || dif < melhor.dif) melhor = { e, dif };
   }
   return melhor ? melhor.e : null;
+}
+
+// ---------- Repetidos ----------
+
+// Identidade de uma conta no banco: a mesma conta conectada em duas conexões (ou por duas pessoas) tem a mesma chave
+export function chaveConta(c) {
+  const so = (x) => String(x || '').replace(/\D/g, '');
+  const banco = so(c?.bankData?.transferNumber);
+  return [c?.type || '', c?.subtype || '', banco || so(c?.number), banco ? '' : SEM_ACENTO(c?.name)].join('|');
+}
+
+// A mesma conta aparece em mais de uma conexão: qual conexão fica com ela?
+// A da pessoa cujas contas são, na maioria, do mesmo titular (o Nubank da Maria fica com quem só tem contas da Maria).
+// Empate: a conexão mais antiga. conexoes: [{ item_id, pessoa, ordem, contas: [{ chave, dono }] }]
+export function conexaoDaConta(chave, conexoes) {
+  const com = conexoes.filter((x) => x.contas.some((c) => c.chave === chave));
+  if (com.length < 2) return com[0]?.item_id ?? null;
+  const dono = SEM_ACENTO(com.flatMap((x) => x.contas).find((c) => c.chave === chave && c.dono)?.dono);
+  const nota = (pessoa) => {
+    const todas = conexoes.filter((x) => x.pessoa === pessoa).flatMap((x) => x.contas).filter((c) => c.dono);
+    return dono && todas.length ? todas.filter((c) => SEM_ACENTO(c.dono) === dono).length / todas.length : 0;
+  };
+  return [...com].sort((a, b) => nota(b.pessoa) - nota(a.pessoa) || a.ordem - b.ordem)[0].item_id;
+}
+
+// Lançamentos que parecem o mesmo dinheiro contado duas vezes. Devolve [{ manter, apagar, motivo, certeza }]
+//  - dois do banco iguais (mesma conta, valor, dia e descrição): a conta entrou por duas conexões;
+//  - um do iPhone/à mão e um do banco, mesmo valor, até 3 dias: o app não percebeu que era a mesma compra.
+// ignorados: Set de "idA-idB" que a pessoa disse que não são repetidos.
+// donoDaConta(nomeConta) -> pessoa que hoje traz essa conta do banco (para manter a cópia dela)
+export function acharRepetidos(linhas, ignorados = new Set(), donoDaConta = () => null) {
+  const tipo = (t) => t.tipo_original || t.tipo;
+  const desc = (t) => SEM_ACENTO(t.descricao).replace(/[^a-z0-9]+/g, ' ').trim();
+  const usados = new Set();
+  const saida = [];
+  const par = (a, b) => (a.id < b.id ? `${a.id}-${b.id}` : `${b.id}-${a.id}`);
+  const peso = (t) => (t.plano_id ? 4 : 0) + (t.tipo_fixo ? 2 : 0) + (t.categoria !== 'A classificar' ? 1 : 0);
+  const ordenadas = [...linhas].sort((a, b) => a.id - b.id);
+
+  for (const a of ordenadas) {
+    if (usados.has(a.id) || a.origem !== 'banco') continue;
+    for (const b of ordenadas) {
+      if (b.id <= a.id || usados.has(b.id) || b.origem !== 'banco' || ignorados.has(par(a, b))) continue;
+      if (tipo(a) !== tipo(b) || a.valor !== b.valor || a.data !== b.data || a.conta !== b.conta || desc(a) !== desc(b)) continue;
+      const dono = donoDaConta(a.conta);
+      const nota = (t) => peso(t) * 2 + (dono && t.pessoa === dono ? 1 : 0);
+      const [manter, apagar] = nota(b) > nota(a) ? [b, a] : [a, b];
+      saida.push({ manter: manter.id, apagar: apagar.id, certeza: a.pessoa !== b.pessoa ? 'alta' : 'media',
+        motivo: a.pessoa !== b.pessoa ? `Veio do banco nas conexões de ${a.pessoa} e de ${b.pessoa}` : 'Veio do banco duas vezes iguais (pode ser conexão repetida)' });
+      usados.add(a.id); usados.add(b.id);
+      break;
+    }
+  }
+  for (const m of ordenadas) {
+    // anotado no iPhone/à mão (mesmo que já ligado a um lançamento do banco) + outro do banco igual
+    if (usados.has(m.id) || m.origem === 'banco') continue;
+    const cand = ordenadas.filter((b) => !usados.has(b.id) && b.origem === 'banco' && !ignorados.has(par(m, b)) &&
+      tipo(b) === tipo(m) && b.valor === m.valor && diasEntre(b.data, m.data) <= 3)
+      .sort((x, y) => diasEntre(x.data, m.data) - diasEntre(y.data, m.data) || (x.pessoa !== m.pessoa) - (y.pessoa !== m.pessoa));
+    if (!cand.length) continue;
+    const b = cand[0];
+    saida.push({ manter: m.id, apagar: b.id, certeza: b.pessoa === m.pessoa ? 'alta' : 'media', juntar: !m.externo_id,
+      motivo: `Anotado ${m.origem === 'atalho' ? 'pelo iPhone' : 'à mão'} e depois veio do banco` });
+    usados.add(m.id); usados.add(b.id);
+  }
+  return saida;
 }
 
 // Situação de uma conexão (item) para o app e para os avisos

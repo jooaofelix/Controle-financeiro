@@ -29,7 +29,7 @@ export async function cartaoBancos(cfg) {
       ${b.itens.map((i) => {
         const s = i.situacao || { nivel: 'aviso', texto: 'Ainda não verificado' };
         const icone = s.nivel === 'ok' ? '✅' : s.nivel === 'aviso' ? '⏳' : '⚠️';
-        const contas = i.contas.map((c) => `${esc(c.nome)} ${esc(c.tipo.toLowerCase())}${c.final ? ' ••' + esc(c.final) : ''}`).join(' · ');
+        const contas = i.contas.map((c) => `${esc(c.nome)} ${esc(c.tipo.toLowerCase())}${c.final ? ' ••' + esc(c.final) : ''}${c.repetidaEm ? ` (já vem pela conexão de ${esc(c.repetidaEm)}, não conto 2×)` : ''}`).join(' · ');
         return `<div class="banco-item ${s.nivel}">
           <span>${icone}</span>
           <div><b>${esc(i.apelido || 'Banco')}</b><small>${esc(s.texto)}${contas ? ' · ' + contas : ''}</small>

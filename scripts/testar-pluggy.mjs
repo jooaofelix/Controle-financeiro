@@ -1,6 +1,6 @@
 // Testes da integração Meu Pluggy: node scripts/testar-pluggy.mjs
 import assert from 'node:assert/strict';
-import { classificar, acharDuplicado, situacaoItem, nomeDaConta, categoriaDoPluggy, meioDoPluggy, mencionaTitular, acharInternas } from '../src/pluggy.js';
+import { classificar, acharDuplicado, situacaoItem, nomeDaConta, categoriaDoPluggy, meioDoPluggy, mencionaTitular, acharInternas, chaveConta, conexaoDaConta, acharRepetidos } from '../src/pluggy.js';
 
 let ok = 0;
 const teste = (nome, fn) => { fn(); ok++; console.log('✓', nome); };
@@ -151,6 +151,58 @@ teste('o que foi corrigido à mão não é mexido; salário não vira transferê
   const r = acharInternas(linhas, tit);
   assert.deepEqual(r.pares, []);
   assert.deepEqual(r.porNome, [4]);
+});
+
+teste('compra do Atalho com nome de cartão diferente ("Mastercard Black") casa com a do banco', () => {
+  const nova = { tipo: 'despesa', valor: 4590, data: '2026-11-18', conta: 'Nubank' };
+  const conhecidas = new Set(['Nubank', 'Inter']);
+  assert.ok(acharDuplicado(nova, [{ tipo: 'despesa', valor: 4590, data: '2026-11-18', conta: 'Mastercard Black' }], conhecidas));
+  assert.equal(acharDuplicado(nova, [{ tipo: 'despesa', valor: 4590, data: '2026-11-18', conta: 'Inter' }], conhecidas), null);
+});
+
+teste('mesma conta em duas conexões: fica com a pessoa dona da conta', () => {
+  const nuMaria = { type: 'BANK', subtype: 'CHECKING_ACCOUNT', bankData: { transferNumber: '260/0001/1234567-8' } };
+  const k = chaveConta(nuMaria);
+  assert.equal(k, chaveConta({ ...nuMaria, name: 'Outro nome' }));
+  assert.notEqual(k, chaveConta({ type: 'BANK', bankData: { transferNumber: '077/0001/99-1' } }));
+  const conexoes = [
+    { item_id: 'joao', pessoa: 'Marido', ordem: 1, contas: [{ chave: 'inter', dono: 'JOAO FELIX' }, { chave: k, dono: 'MARIA SILVA' }] },
+    { item_id: 'maria', pessoa: 'Esposa', ordem: 2, contas: [{ chave: k, dono: 'Maria Silva' }, { chave: 'cartao', dono: 'MARIA SILVA' }] },
+  ];
+  assert.equal(conexaoDaConta(k, conexoes), 'maria');
+  assert.equal(conexaoDaConta('inter', conexoes), 'joao');
+  // sem saber o dono: a conexão mais antiga
+  const semDono = conexoes.map((x) => ({ ...x, contas: x.contas.map((c) => ({ chave: c.chave })) }));
+  assert.equal(conexaoDaConta(k, semDono), 'joao');
+});
+
+teste('acha repetidos: mesma conta pelas duas pessoas, e iPhone + banco', () => {
+  const B = (id, o) => ({ id, origem: 'banco', externo_id: 'x' + id, tipo: 'despesa', categoria: 'Outros', conta: 'Nubank', descricao: 'IFOOD', data: '2026-11-10', pessoa: 'Esposa', ...o });
+  const linhas = [
+    B(1, { valor: 4590 }),
+    B(2, { valor: 4590, pessoa: 'Marido', plano_id: 9 }),                 // cópia, mas é a que tem vínculo: fica esta
+    B(3, { valor: 10000, tipo: 'receita', descricao: 'Pix recebido' }),
+    B(4, { valor: 10000, tipo: 'receita', descricao: 'Pix recebido', pessoa: 'Marido' }),
+    { id: 5, origem: 'atalho', externo_id: null, tipo: 'despesa', valor: 3000, data: '2026-11-12', conta: 'Mastercard', pessoa: 'Marido', categoria: 'Mercado' },
+    B(6, { valor: 3000, data: '2026-11-13', conta: 'Inter', descricao: 'MERCADO X', pessoa: 'Marido' }),
+    B(7, { valor: 3000, data: '2026-11-25', descricao: 'OUTRA' }),        // longe: não
+    B(8, { valor: 2000, descricao: 'CAFE' }), B(9, { valor: 2000, descricao: 'CAFE' }), // dois cafés iguais: revisar
+  ];
+  const r = acharRepetidos(linhas);
+  const ach = (m, a) => r.find((x) => x.manter === m && x.apagar === a);
+  assert.ok(ach(2, 1)); assert.equal(ach(2, 1).certeza, 'alta');
+  assert.ok(ach(3, 4));
+  assert.ok(ach(5, 6)?.juntar);
+  assert.equal(ach(8, 9).certeza, 'media');
+  assert.equal(r.length, 4);
+  assert.equal(acharRepetidos(linhas, new Set(['8-9'])).length, 3);  // "não é repetido" fica guardado
+  // sabendo quem é a dona da conta, fica a cópia dela
+  assert.ok(acharRepetidos(linhas, new Set(), () => 'Marido').find((x) => x.manter === 4 && x.apagar === 3));
+  // compra do iPhone já ligada ao banco + a mesma compra vinda de uma 2ª conexão
+  const ligada = [{ id: 1, origem: 'atalho', externo_id: 'b-c1', tipo: 'despesa', valor: 4590, data: '2026-11-10', conta: 'Nubank', pessoa: 'Esposa', categoria: 'Alimentação' },
+    B(2, { valor: 4590, descricao: 'IFOOD *RESTAURANTE' })];
+  const rl = acharRepetidos(ligada);
+  assert.equal(rl.length, 1); assert.equal(rl[0].manter, 1); assert.equal(rl[0].juntar, false);
 });
 
 console.log(`\n${ok} testes do Meu Pluggy passaram`);

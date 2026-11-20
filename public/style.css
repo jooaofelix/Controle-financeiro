@@ -567,3 +567,16 @@ dialog::backdrop { background: rgb(10 20 15 / 0.45); }
 .item-entre .desc { color: var(--sutil); }
 .dica-entre, .dica-lista { font-size: 13px; color: var(--sutil); margin: 6px 4px 0; line-height: 1.4; }
 .dica-lista { margin: 8px 6px 0; }
+
+/* ---------- Repetidos ---------- */
+.rep-titulo { margin: 4px 4px 2px; font-size: 20px; }
+.rep-sub { margin: 0 4px 10px; font-size: 13.5px; line-height: 1.4; }
+#rep-lista { display: grid; gap: 10px; max-height: 60vh; overflow: auto; }
+.rep-item { background: var(--bg); border-radius: 16px; padding: 10px 12px; display: grid; gap: 6px; }
+.rep-motivo { margin: 0; font-size: 13px; font-weight: 600; }
+.rep-linha { display: grid; gap: 1px; background: var(--card); border-radius: 12px; padding: 8px 10px; }
+.rep-linha small { font-size: 11px; color: var(--sutil); text-transform: uppercase; letter-spacing: .4px; }
+.rep-linha b { font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rep-linha span { font-size: 12.5px; color: var(--sutil); }
+.rep-acoes { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.rep-acoes button { padding: 9px; font-size: 14px; }

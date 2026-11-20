@@ -4,7 +4,7 @@ import { paraCentavos } from './valores.js';
 import { ESTATICOS } from './estaticos.js';
 import { enviarPush } from './push.js';
 import { sugerirVinculo, mesReferencia, diaVencimento, itensPagaveis, nomeItem } from '../public/vinculos.js';
-import { PLUGGY_BASE, clientePluggy, ehPagamentoFatura, classificar, acharDuplicado, situacaoItem, nomeDaConta, categoriaDoPluggy, acharInternas } from './pluggy.js';
+import { PLUGGY_BASE, clientePluggy, ehPagamentoFatura, classificar, acharDuplicado, situacaoItem, nomeDaConta, categoriaDoPluggy, acharInternas, chaveConta, conexaoDaConta, acharRepetidos } from './pluggy.js';
 
 const CATEGORIAS = [
   'Mercado', 'Alimentação', 'Casa', 'Transporte', 'Saúde', 'Lazer',
@@ -87,6 +87,10 @@ const SCHEMA = [
     descricao TEXT NOT NULL DEFAULT '',
     origem    TEXT NOT NULL DEFAULT 'manual'
   )`,
+  // Lançamentos do banco que a pessoa apagou: a sincronização não traz de volta
+  `CREATE TABLE IF NOT EXISTS externos_apagados (externo_id TEXT PRIMARY KEY)`,
+  // Pares que a pessoa disse "não é repetido" ("idMenor-idMaior")
+  `CREATE TABLE IF NOT EXISTS repetidos_ignorados (par TEXT PRIMARY KEY)`,
   // Planejador: salários, contas fixas, cartões e ajustes (dados em JSON)
   `CREATE TABLE IF NOT EXISTS plano (
     id    INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -232,8 +236,9 @@ async function rotear(req, env, url) {
     return json(r);
   }
   if (mId && m === 'DELETE') {
-    const antes = await env.DB.prepare(`SELECT par_id FROM transacoes WHERE id=?`).bind(Number(mId[1])).first();
+    const antes = await env.DB.prepare(`SELECT par_id, externo_id FROM transacoes WHERE id=?`).bind(Number(mId[1])).first();
     await env.DB.prepare(`DELETE FROM transacoes WHERE id=?`).bind(Number(mId[1])).run();
+    if (antes?.externo_id) await env.DB.prepare(`INSERT OR IGNORE INTO externos_apagados (externo_id) VALUES (?)`).bind(antes.externo_id).run();
     if (antes?.par_id) await desfazerPar(env, antes.par_id);
     return json({ ok: true });
   }
@@ -258,6 +263,16 @@ async function rotear(req, env, url) {
 
   // ---------- Saldo agora nas contas ----------
   if (pathname === '/api/saldos' && m === 'GET') return json(await saldosAtuais(env));
+  // Lançamentos que parecem repetidos (revisão)
+  if (pathname === '/api/repetidos' && m === 'GET') return json(await listarRepetidos(env));
+  if (pathname === '/api/repetidos/resolver' && m === 'POST') return json(await resolverRepetido(env, await req.json().catch(() => ({}))));
+  if (pathname === '/api/repetidos/ignorar' && m === 'POST') {
+    const b = await req.json().catch(() => ({}));
+    const [x, y] = [Number(b.manter), Number(b.apagar)].sort((p, q) => p - q);
+    if (!x || !y) throw erro(400, 'Par inválido');
+    await env.DB.prepare(`INSERT OR IGNORE INTO repetidos_ignorados (par) VALUES (?)`).bind(`${x}-${y}`).run();
+    return json({ ok: true });
+  }
 
   // ---------- Notificações (Web Push) ----------
   if (pathname === '/api/push/chave' && m === 'GET') {
@@ -588,11 +603,12 @@ async function atalho(req, env, corpoTxt, tipo) {
 
 // ---------- Saldo agora: contas correntes do banco + saldos informados à mão ----------
 async function saldosAtuais(env) {
-  const { results: itens } = await env.DB.prepare(`SELECT pessoa, apelido, contas, atualizado_em FROM pluggy_itens`).all();
+  const itens = await conexoesAtivas(env);
   const lista = [];
   for (const it of itens) {
-    for (const c of JSON.parse(it.contas || '[]')) {
+    for (const c of it.contas) {
       if (c.tipo !== 'Conta' || c.saldo == null || /SAVINGS/i.test(c.subtipo || '')) continue;
+      if (c.chave && conexaoDaConta(c.chave, itens) !== it.item_id) continue; // mesma conta em duas conexões: conta uma vez
       lista.push({ pessoa: it.pessoa, conta: c.nome, valor: c.saldo, origem: 'banco', atualizado: it.atualizado_em });
     }
   }
@@ -604,6 +620,13 @@ async function saldosAtuais(env) {
     lista.push({ id: r.id, pessoa: d.pessoa, conta: d.conta, valor: d.valor, origem: 'manual', atualizado: d.data });
   }
   return lista;
+}
+
+// Conexões que estão funcionando, com as contas já lidas (a mais antiga primeiro)
+async function conexoesAtivas(env) {
+  const { results } = await env.DB.prepare(`SELECT rowid AS ordem, * FROM pluggy_itens ORDER BY rowid`).all();
+  return results.filter((x) => JSON.parse(x.situacao || '{}').nivel !== 'erro')
+    .map((x) => ({ ...x, contas: JSON.parse(x.contas || '[]') }));
 }
 
 // ---------- Vínculo com contas previstas ----------
@@ -659,6 +682,11 @@ const somaDias = (iso, n) => new Date(Date.parse(iso + 'T12:00:00Z') + n * 86400
 async function listarBancos(env) {
   const { results: bancos } = await env.DB.prepare(`SELECT pessoa, client_id, itens, ultimo_sync, ultimo_erro, ultimo_resumo FROM bancos`).all();
   const { results: itens } = await env.DB.prepare(`SELECT * FROM pluggy_itens`).all();
+  const ativas = await conexoesAtivas(env);
+  const donaDe = (c) => {
+    const id = c.chave ? conexaoDaConta(c.chave, ativas) : null;
+    return id ? ativas.find((x) => x.item_id === id) : null;
+  };
   return pessoas(env).map((pessoa) => {
     const b = bancos.find((x) => x.pessoa === pessoa);
     if (!b) return { pessoa, configurado: false };
@@ -669,7 +697,10 @@ async function listarBancos(env) {
       clientIdFim: String(b.client_id).slice(-4),
       itens: lista.map((i) => {
         const r = itens.find((x) => x.item_id === i.id) || {};
-        return { id: i.id, apelido: i.apelido, status: r.status || null, situacao: r.situacao ? JSON.parse(r.situacao) : null, atualizado_em: r.atualizado_em || null, contas: JSON.parse(r.contas || '[]') };
+        return { id: i.id, apelido: i.apelido, status: r.status || null, situacao: r.situacao ? JSON.parse(r.situacao) : null, atualizado_em: r.atualizado_em || null, contas: JSON.parse(r.contas || '[]').map((c) => {
+          const d = donaDe(c);
+          return d && d.item_id !== i.id ? { ...c, repetidaEm: d.pessoa } : c;
+        }) };
       }),
       ultimo_sync: b.ultimo_sync,
       ultimo_erro: b.ultimo_erro,
@@ -799,14 +830,30 @@ async function sincronizarPessoa(env, pessoa, { manual = false } = {}) {
         JSON.stringify(contas.map((c) => ({
           nome: nomeDaConta(c, apelido), tipo: c.type === 'CREDIT' ? 'Cartão' : 'Conta', subtipo: c.subtype || '',
           final: String(c.number || '').replace(/\D/g, '').slice(-4),
+          chave: chaveConta(c), dono: (typeof c.owner === 'string' ? c.owner : c.owner?.name) || '',
           saldo: typeof c.balance === 'number' ? Math.round(c.balance * 100) : null,
         }))), avisoEm).run();
       if (sit.nivel === 'erro') continue;
 
+      // A mesma conta pode estar em duas conexões (ex.: o Nubank dela no Meu Pluggy dele também): só uma importa
+      const { results: todasConexoes } = await env.DB.prepare(`SELECT rowid AS ordem, item_id, pessoa, contas, situacao FROM pluggy_itens`).all();
+      // Conexão parada (vencida) não "segura" a conta: senão uma reconexão nova nunca importaria nada
+      const conexoes = todasConexoes
+        .filter((x) => x.item_id === it.id || JSON.parse(x.situacao || '{}').nivel !== 'erro')
+        .map((x) => ({ ...x, contas: JSON.parse(x.contas || '[]') }));
+      const contasConhecidas = new Set(conexoes.flatMap((x) => x.contas.map((c) => c.nome)));
+      const { results: apagados } = await env.DB.prepare(`SELECT externo_id FROM externos_apagados`).all();
+      const jaApagados = new Set(apagados.map((a) => a.externo_id));
+
       for (const conta of contas) {
         const nomeConta = nomeDaConta(conta, apelido);
+        const dona = conexaoDaConta(chaveConta(conta), conexoes);
+        if (dona && dona !== it.id) {
+          resumo.contasRepetidas = (resumo.contasRepetidas || 0) + 1;
+          continue;
+        }
         for (const t of await cli.transacoes(conta.id, { dateFrom })) {
-          if (!t.id) continue;
+          if (!t.id || jaApagados.has(String(t.id))) continue;
           const c = classificar(t, conta);
           const ja = await env.DB.prepare(`SELECT id, data, meio, origem FROM transacoes WHERE externo_id=?`).bind(String(t.id)).first();
           if (ja) {
@@ -829,11 +876,13 @@ async function sincronizarPessoa(env, pessoa, { manual = false } = {}) {
           const { results: perto } = await env.DB.prepare(
             `SELECT id, tipo, valor, data, conta, externo_id FROM transacoes WHERE externo_id IS NULL AND data BETWEEN ? AND ?`
           ).bind(somaDias(c.data, -3), somaDias(c.data, 3)).all();
-          const dup = acharDuplicado(nova, perto);
+          const dup = acharDuplicado(nova, perto, contasConhecidas);
           if (dup) {
-            // Compra do Apple Pay/manual confirmada pelo banco: liga e completa a forma de pagamento
-            await env.DB.prepare(`UPDATE transacoes SET externo_id=?, meio = CASE WHEN meio = '' THEN ? ELSE meio END WHERE id=?`)
-              .bind(String(t.id), c.meio, dup.id).run();
+            // Compra do Apple Pay/manual confirmada pelo banco: liga, completa a forma de pagamento
+            // e troca um nome de cartão desconhecido ("Mastercard Black") pelo nome da conta do banco
+            await env.DB.prepare(`UPDATE transacoes SET externo_id=?, meio = CASE WHEN meio = '' THEN ? ELSE meio END,
+                conta = CASE WHEN conta = '' OR conta NOT IN (${[...contasConhecidas].map(() => '?').join(',') || "''"}) THEN ? ELSE conta END WHERE id=?`)
+              .bind(String(t.id), c.meio, ...contasConhecidas, nomeConta, dup.id).run();
             resumo.ligados++;
             continue;
           }
@@ -883,6 +932,44 @@ async function sincronizarPessoa(env, pessoa, { manual = false } = {}) {
     }
   }
   return { ...resumo, primeira, manual };
+}
+
+// ---------- Repetidos ----------
+
+async function listarRepetidos(env) {
+  const desde = somaDias(hojeSP(), -120);
+  const { results: linhas } = await env.DB.prepare(`SELECT * FROM transacoes WHERE data >= ? ORDER BY id`).bind(desde).all();
+  const { results: ign } = await env.DB.prepare(`SELECT par FROM repetidos_ignorados`).all();
+  const porId = new Map(linhas.map((t) => [t.id, t]));
+  const ativas = await conexoesAtivas(env);
+  const donoDaConta = (nome) => {
+    for (const x of ativas) {
+      const c = x.contas.find((k) => k.nome === nome && k.chave);
+      if (c) return ativas.find((y) => y.item_id === conexaoDaConta(c.chave, ativas))?.pessoa || null;
+    }
+    return null;
+  };
+  return acharRepetidos(linhas, new Set(ign.map((i) => i.par)), donoDaConta)
+    .map((r) => ({ ...r, manterT: porId.get(r.manter), apagarT: porId.get(r.apagar) }));
+}
+
+// Apaga a cópia. Se a que fica foi anotada no iPhone/à mão, ela herda a ligação com o banco (não volta a duplicar).
+async function resolverRepetido(env, b) {
+  const manter = await env.DB.prepare(`SELECT * FROM transacoes WHERE id=?`).bind(Number(b.manter)).first();
+  const apagar = await env.DB.prepare(`SELECT * FROM transacoes WHERE id=?`).bind(Number(b.apagar)).first();
+  if (!manter || !apagar || manter.id === apagar.id) throw erro(404, 'Lançamento não encontrado (talvez já resolvido)');
+  if (manter.valor !== apagar.valor) throw erro(400, 'Os valores não batem');
+  await env.DB.prepare(`DELETE FROM transacoes WHERE id=?`).bind(apagar.id).run();
+  if (apagar.par_id) await env.DB.prepare(`UPDATE transacoes SET par_id=NULL WHERE id=?`).bind(apagar.par_id).run();
+  if (apagar.externo_id && !manter.externo_id) {
+    await env.DB.prepare(
+      `UPDATE transacoes SET externo_id=?, meio = CASE WHEN meio = '' THEN ? ELSE meio END,
+         conta = CASE WHEN origem != 'banco' THEN ? ELSE conta END WHERE id=?`
+    ).bind(apagar.externo_id, apagar.meio || '', apagar.conta, manter.id).run();
+  } else if (apagar.externo_id) {
+    await env.DB.prepare(`INSERT OR IGNORE INTO externos_apagados (externo_id) VALUES (?)`).bind(apagar.externo_id).run();
+  }
+  return { ok: true };
 }
 
 // ---------- Transferências entre contas da casa ----------

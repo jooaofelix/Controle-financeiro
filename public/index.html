@@ -57,6 +57,7 @@
     </section>
 
     <button id="aviso-classificar" class="aviso" hidden></button>
+    <button id="aviso-repetidos" class="aviso" hidden></button>
     <div id="banner-notif" class="aviso banner-notif" hidden></div>
 
     <!-- Vence em breve (do planejador) -->
@@ -245,6 +246,20 @@
         <button type="submit" class="btn-primario">Salvar</button>
       </div>
     </form>
+  </dialog>
+
+  <!-- Revisão de lançamentos repetidos -->
+  <dialog id="dlg-rep">
+    <div class="folha">
+      <div class="puxador"></div>
+      <h2 class="rep-titulo">🧹 Parecem repetidos</h2>
+      <p class="sutil rep-sub">O mesmo dinheiro contado duas vezes. Confira e apague a cópia. O que for de verdade dois lançamentos, toque em "Não é repetido".</p>
+      <div id="rep-lista"></div>
+      <div class="acoes">
+        <button type="button" id="rep-fechar" class="btn-sec">Fechar</button>
+        <button type="button" id="rep-todos" class="btn-primario">Apagar todas as cópias</button>
+      </div>
+    </div>
   </dialog>
 
   <!-- Editor do planejador -->
