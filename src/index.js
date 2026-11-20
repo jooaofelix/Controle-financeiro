@@ -4,7 +4,7 @@ import { paraCentavos } from './valores.js';
 import { ESTATICOS } from './estaticos.js';
 import { enviarPush } from './push.js';
 import { sugerirVinculo, mesReferencia, diaVencimento, itensPagaveis, nomeItem } from '../public/vinculos.js';
-import { PLUGGY_BASE, clientePluggy, ehPagamentoFatura, classificar, acharDuplicado, situacaoItem, nomeDaConta, categoriaDoPluggy } from './pluggy.js';
+import { PLUGGY_BASE, clientePluggy, ehPagamentoFatura, classificar, acharDuplicado, situacaoItem, nomeDaConta, categoriaDoPluggy, acharInternas } from './pluggy.js';
 
 const CATEGORIAS = [
   'Mercado', 'Alimentação', 'Casa', 'Transporte', 'Saúde', 'Lazer',
@@ -122,6 +122,12 @@ export class Casa extends DurableObject {
     // Vínculo com uma conta prevista do planejador (id em plano) e o mês a que o pagamento se refere
     try { ctx.storage.sql.exec(`ALTER TABLE transacoes ADD COLUMN plano_id INTEGER`); } catch {}
     try { ctx.storage.sql.exec(`ALTER TABLE transacoes ADD COLUMN plano_mes TEXT`); } catch {}
+    // Transferência entre contas da casa: par (a outra metade), tipo travado pela pessoa e tipo antes da troca
+    try { ctx.storage.sql.exec(`ALTER TABLE transacoes ADD COLUMN par_id INTEGER`); } catch {}
+    try { ctx.storage.sql.exec(`ALTER TABLE transacoes ADD COLUMN tipo_fixo INTEGER NOT NULL DEFAULT 0`); } catch {}
+    try { ctx.storage.sql.exec(`ALTER TABLE transacoes ADD COLUMN tipo_original TEXT`); } catch {}
+    // Nome do titular das contas (vem do banco), para reconhecer Pix para si mesmo / para o cônjuge
+    try { ctx.storage.sql.exec(`ALTER TABLE bancos ADD COLUMN titular TEXT`); } catch {}
     ctx.storage.sql.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_transacoes_externo ON transacoes(externo_id) WHERE externo_id IS NOT NULL`);
     this.db = bancoSql(ctx.storage.sql);
   }
@@ -212,16 +218,23 @@ async function rotear(req, env, url) {
   if (mId && m === 'PUT') {
     const corpo = await req.json();
     const t = validar(corpo, env);
+    const antes = await env.DB.prepare(`SELECT tipo, par_id FROM transacoes WHERE id=?`).bind(Number(mId[1])).first();
+    if (!antes) throw erro(404, 'Lançamento não encontrado');
+    const mudouTipo = antes.tipo !== t.tipo;
     let r = await env.DB.prepare(
-      `UPDATE transacoes SET data=?, valor=?, tipo=?, categoria=?, pessoa=?, conta=?, descricao=?, meio=?
+      `UPDATE transacoes SET data=?, valor=?, tipo=?, categoria=?, pessoa=?, conta=?, descricao=?, meio=?,
+         tipo_fixo = CASE WHEN ? THEN 1 ELSE tipo_fixo END, par_id = CASE WHEN ? THEN NULL ELSE par_id END
        WHERE id=? RETURNING *`
-    ).bind(t.data, t.valor, t.tipo, t.categoria, t.pessoa, t.conta, t.descricao, t.meio, Number(mId[1])).first();
-    if (!r) throw erro(404, 'Lançamento não encontrado');
+    ).bind(t.data, t.valor, t.tipo, t.categoria, t.pessoa, t.conta, t.descricao, t.meio, mudouTipo ? 1 : 0, mudouTipo ? 1 : 0, Number(mId[1])).first();
+    // Era "entre contas" e a pessoa disse que não: a outra metade volta a ser o que era (e fica travada)
+    if (mudouTipo && antes.par_id) await desfazerPar(env, antes.par_id);
     if ('plano_id' in corpo) r = await vincular(env, r, corpo.plano_id || null);
     return json(r);
   }
   if (mId && m === 'DELETE') {
+    const antes = await env.DB.prepare(`SELECT par_id FROM transacoes WHERE id=?`).bind(Number(mId[1])).first();
     await env.DB.prepare(`DELETE FROM transacoes WHERE id=?`).bind(Number(mId[1])).run();
+    if (antes?.par_id) await desfazerPar(env, antes.par_id);
     return json({ ok: true });
   }
 
@@ -740,7 +753,8 @@ async function sincronizarPessoa(env, pessoa, { manual = false } = {}) {
   // datas/formas de pagamento antigas também são corrigidas)
   const dateFrom = primeira ? hoje.slice(0, 8) + '01' : somaDias(hoje, -45);
   const resumo = { importados: 0, ligados: 0, ignorados: 0, erros: [] };
-  const novos = [];
+  let novos = [];
+  const titulares = new Set();
   const itens = JSON.parse(cfg.itens || '[]');
 
   let cli;
@@ -761,6 +775,10 @@ async function sincronizarPessoa(env, pessoa, { manual = false } = {}) {
         await env.DB.prepare(`UPDATE bancos SET itens=? WHERE pessoa=?`).bind(JSON.stringify(itens), pessoa).run();
       }
       apelido = it.apelido || apelido;
+      for (const c of contas) {
+        const dono = typeof c.owner === 'string' ? c.owner : c.owner?.name;
+        if (dono && dono.trim()) titulares.add(dono.trim());
+      }
       const anterior = await env.DB.prepare(`SELECT aviso_em FROM pluggy_itens WHERE item_id=?`).bind(it.id).first();
       let avisoEm = anterior?.aviso_em || null;
       // Aviso de conexão parada ou vencendo: no máximo um por dia por banco
@@ -835,6 +853,19 @@ async function sincronizarPessoa(env, pessoa, { manual = false } = {}) {
     }
   }
 
+  if (titulares.size) await env.DB.prepare(`UPDATE bancos SET titular=? WHERE pessoa=?`).bind([...titulares].join('|'), pessoa).run();
+  // Pix entre vocês / para outra conta sua não é entrada nem gasto
+  try {
+    resumo.entreContas = await detectarInternas(env);
+    if (novos.length) {
+      const ids = novos.map((r) => r.id);
+      const { results } = await env.DB.prepare(`SELECT * FROM transacoes WHERE id IN (${ids.map(() => '?').join(',')}) AND tipo != 'transferencia'`).bind(...ids).all();
+      novos = results;
+    }
+  } catch (e) {
+    resumo.erros.push(`entre contas: ${e.message}`);
+  }
+
   await env.DB.prepare(`UPDATE bancos SET ultimo_sync=?, ultimo_erro=?, ultimo_resumo=? WHERE pessoa=?`)
     .bind(new Date().toISOString(), resumo.erros.join(' | ') || null, JSON.stringify(resumo), pessoa).run();
 
@@ -854,10 +885,40 @@ async function sincronizarPessoa(env, pessoa, { manual = false } = {}) {
   return { ...resumo, primeira, manual };
 }
 
+// ---------- Transferências entre contas da casa ----------
+
+// Marca como "transferencia" os pares saída/entrada entre vocês e o que cita o nome de um titular.
+async function detectarInternas(env) {
+  const desde = somaDias(hojeSP(), -60);
+  const { results: linhas } = await env.DB.prepare(
+    `SELECT id, tipo, valor, data, pessoa, conta, meio, origem, categoria, descricao, tipo_fixo, par_id FROM transacoes WHERE data >= ?`
+  ).bind(desde).all();
+  const { results: bancos } = await env.DB.prepare(`SELECT titular FROM bancos WHERE titular IS NOT NULL`).all();
+  const titulares = bancos.flatMap((b) => String(b.titular).split('|')).filter(Boolean);
+  const { pares, porNome } = acharInternas(linhas, titulares);
+  const marcar = (id, par) => env.DB.prepare(
+    `UPDATE transacoes SET tipo_original = COALESCE(tipo_original, tipo), tipo='transferencia', par_id=?,
+       meio = CASE WHEN meio = '' THEN 'transferencia' ELSE meio END, plano_id=NULL, plano_mes=NULL
+     WHERE id=? AND tipo_fixo=0`
+  ).bind(par, id).run();
+  for (const [a, b] of pares) { await marcar(a, b); await marcar(b, a); }
+  for (const id of porNome) await marcar(id, null);
+  return pares.length * 2 + porNome.length;
+}
+
+// A pessoa disse que não era transferência: a outra metade do par volta ao que era e fica travada
+async function desfazerPar(env, id) {
+  await env.DB.prepare(
+    `UPDATE transacoes SET tipo = COALESCE(tipo_original, tipo), par_id=NULL, tipo_fixo=1 WHERE id=? AND tipo='transferencia'`
+  ).bind(id).run();
+  await env.DB.prepare(`UPDATE transacoes SET par_id=NULL WHERE id=?`).bind(id).run();
+}
+
 // ---------- Notificações ----------
 
 // Avisa todos os aparelhos inscritos sobre um lançamento novo (entrada ou saída)
 async function notificarLancamento(env, t) {
+  if (!t || t.tipo === 'transferencia') return;
   try {
     const entrada = t.tipo === 'receita';
     const { total } = await env.DB.prepare(
@@ -931,7 +992,7 @@ function validar(b, env) {
   const valor = paraCentavos(b.valor);
   if (!valor) throw erro(400, 'Informe um valor maior que zero');
   if (!/^\d{4}-\d{2}-\d{2}$/.test(b.data || '')) throw erro(400, 'Data inválida');
-  const tipo = b.tipo === 'receita' ? 'receita' : 'despesa';
+  const tipo = ['receita', 'transferencia'].includes(b.tipo) ? b.tipo : 'despesa';
   const categoria = CATEGORIAS.includes(b.categoria) ? b.categoria : 'Outros';
   const lista = pessoas(env);
   const pessoa = lista.includes(b.pessoa) ? b.pessoa : lista[0];

@@ -1,6 +1,6 @@
 // Testes da integração Meu Pluggy: node scripts/testar-pluggy.mjs
 import assert from 'node:assert/strict';
-import { classificar, acharDuplicado, situacaoItem, nomeDaConta, categoriaDoPluggy, meioDoPluggy } from '../src/pluggy.js';
+import { classificar, acharDuplicado, situacaoItem, nomeDaConta, categoriaDoPluggy, meioDoPluggy, mencionaTitular, acharInternas } from '../src/pluggy.js';
 
 let ok = 0;
 const teste = (nome, fn) => { fn(); ok++; console.log('✓', nome); };
@@ -103,6 +103,54 @@ teste('cartão parcelado: cada parcela fica no mês da sua fatura e a descriçã
   assert.equal(r.data, '2026-12-03');
   assert.equal(r.descricao, 'GELADEIRA (parcelado em 12x)');
   assert.equal(r.parcelas, 12);
+});
+
+teste('reconhece o nome de um dos titulares na descrição (transferência entre contas)', () => {
+  const tit = ['João Victor Felix', 'Maria Aparecida da Silva'];
+  assert.equal(mencionaTitular('Pix recebido - JOAO V FELIX', tit), true);
+  assert.equal(mencionaTitular('Transferência enviada pelo Pix - Maria A Silva', tit), true);
+  assert.equal(mencionaTitular('TED recebida JOÃO VICTOR FELIX', tit), true);
+  assert.equal(mencionaTitular('Pix recebido - JOAO PEREIRA', tit), false);   // só o primeiro nome
+  assert.equal(mencionaTitular('Pix recebido - MARCOS SILVA', tit), false);   // só o sobrenome
+  assert.equal(mencionaTitular('Compra no débito - PADARIA', tit), false);
+  assert.equal(mencionaTitular('Pix recebido - JOAO FELIX', []), false);
+});
+
+const L = (id, o) => ({ id, origem: 'banco', meio: 'pix', categoria: 'Outros', descricao: '', conta: 'Inter', pessoa: 'Marido', ...o });
+
+teste('Pix entre marido e esposa vira "entre contas" (par saída + entrada)', () => {
+  const linhas = [
+    L(1, { tipo: 'despesa', valor: 50000, data: '2026-11-10', pessoa: 'Marido', conta: 'Inter' }),
+    L(2, { tipo: 'receita', valor: 50000, data: '2026-11-11', pessoa: 'Esposa', conta: 'Nubank' }),
+    L(3, { tipo: 'receita', valor: 50000, data: '2026-11-20', pessoa: 'Esposa', conta: 'Nubank' }), // longe demais
+    L(4, { tipo: 'despesa', valor: 9990, data: '2026-11-10', pessoa: 'Esposa', meio: 'credito' }),
+    L(5, { tipo: 'receita', valor: 9990, data: '2026-11-10', pessoa: 'Marido' }),                  // compra no cartão não pareia
+  ];
+  assert.deepEqual(acharInternas(linhas).pares, [[2, 1]]);
+});
+
+teste('transferência entre contas da mesma pessoa (Inter → Nubank) também', () => {
+  const linhas = [
+    L(1, { tipo: 'despesa', valor: 120000, data: '2026-11-05', conta: 'Nubank' }),
+    L(2, { tipo: 'receita', valor: 120000, data: '2026-11-05', conta: 'Inter' }),
+    L(3, { tipo: 'despesa', valor: 3000, data: '2026-11-06', conta: 'Inter' }),
+    L(4, { tipo: 'receita', valor: 3000, data: '2026-11-06', conta: 'Inter' }),                    // mesma conta: não
+  ];
+  assert.deepEqual(acharInternas(linhas).pares, [[2, 1]]);
+});
+
+teste('o que foi corrigido à mão não é mexido; salário não vira transferência pelo nome', () => {
+  const tit = ['João Victor Felix'];
+  const linhas = [
+    L(1, { tipo: 'despesa', valor: 500, data: '2026-11-10', pessoa: 'Marido', tipo_fixo: 1 }),
+    L(2, { tipo: 'receita', valor: 500, data: '2026-11-10', pessoa: 'Esposa' }),
+    L(3, { tipo: 'receita', valor: 800000, data: '2026-11-05', descricao: 'TED recebida JOAO VICTOR FELIX', categoria: 'Salário' }),
+    L(4, { tipo: 'receita', valor: 70000, data: '2026-11-07', descricao: 'Pix recebido - JOAO V FELIX' }),
+    L(5, { tipo: 'receita', valor: 70000, data: '2026-11-07', descricao: 'Pix recebido - JOAO V FELIX', origem: 'manual' }),
+  ];
+  const r = acharInternas(linhas, tit);
+  assert.deepEqual(r.pares, []);
+  assert.deepEqual(r.porNome, [4]);
 });
 
 console.log(`\n${ok} testes do Meu Pluggy passaram`);

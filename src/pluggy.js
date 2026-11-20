@@ -66,6 +66,45 @@ export function ehPagamentoFatura(t) {
     /pagamento (de |da )?fatura|pgto fatura|fatura do cart|pagamento de cart[aã]o/i.test(String(t?.description || ''));
 }
 
+// A descrição cita algum dos titulares (você ou sua esposa)? Ex.: "Pix recebido - JOAO V FELIX".
+// Exige o primeiro E o último nome do titular (evita confundir com outra pessoa só de mesmo nome).
+const SEM_ACENTO = (s) => String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+const LIGACOES = new Set(['de', 'da', 'do', 'das', 'dos', 'e']);
+export function mencionaTitular(descricao, titulares = []) {
+  const palavras = new Set(SEM_ACENTO(descricao).split(/[^a-z]+/).filter(Boolean));
+  return titulares.some((nome) => {
+    const p = SEM_ACENTO(nome).split(/[^a-z]+/).filter((w) => w.length >= 2 && !LIGACOES.has(w));
+    if (p.length < 2) return false;
+    return palavras.has(p[0]) && palavras.has(p[p.length - 1]);
+  });
+}
+
+// Acha movimentações que são só dinheiro trocando de conta dentro da casa (não é renda nem gasto):
+//  1) pares: saiu de um e entrou no outro (ou em outra conta da mesma pessoa), mesmo valor, até 2 dias;
+//  2) por nome: o extrato do banco cita o nome de um dos titulares ("Pix recebido - JOAO V FELIX").
+// Ignora o que a pessoa já corrigiu à mão (tipo_fixo) e compras no cartão/débito/boleto.
+const MEIO_TRANSFERE = new Set(['pix', 'transferencia', '']);
+const diasEntre = (a, b) => Math.abs(Date.parse(a) - Date.parse(b)) / 86400000;
+export function acharInternas(linhas, titulares = []) {
+  const livres = linhas.filter((t) => !t.tipo_fixo && !t.par_id && (t.tipo === 'receita' || t.tipo === 'despesa') && MEIO_TRANSFERE.has(t.meio || ''));
+  const usados = new Set();
+  const pares = [];
+  const entradas = livres.filter((t) => t.tipo === 'receita').sort((a, b) => a.data.localeCompare(b.data) || a.id - b.id);
+  for (const r of entradas) {
+    const candidatos = livres.filter((d) => d.tipo === 'despesa' && !usados.has(d.id) && d.valor === r.valor && diasEntre(d.data, r.data) <= 2 &&
+      (d.pessoa !== r.pessoa || (d.conta && r.conta && d.conta !== r.conta && d.origem === 'banco' && r.origem === 'banco')));
+    if (!candidatos.length) continue;
+    candidatos.sort((a, b) => diasEntre(a.data, r.data) - diasEntre(b.data, r.data) || (a.pessoa === r.pessoa) - (b.pessoa === r.pessoa));
+    const d = candidatos[0];
+    usados.add(d.id); usados.add(r.id);
+    pares.push([r.id, d.id]);
+  }
+  const porNome = livres
+    .filter((t) => !usados.has(t.id) && t.origem === 'banco' && t.categoria !== 'Salário' && mencionaTitular(t.descricao, titulares))
+    .map((t) => t.id);
+  return { pares, porNome };
+}
+
 // Decide o que fazer com uma transação do Pluggy.
 // Devolve { importar: false, motivo } ou { importar: true, tipo, valor, data, descricao, categoriaPluggy, cartao }
 export function classificar(t, conta) {

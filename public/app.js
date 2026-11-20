@@ -16,6 +16,7 @@ let itensPlano = [];
 let pagamentosPlano = []; // gastos já vinculados a contas previstas (meses próximos)
 let vinculoManual = false; // a pessoa escolheu o vínculo no formulário (não sobrescrever com sugestão)
 let filtroCat = null;
+let filtroTipo = null; // 'receita' | 'transferencia' — tocar em Entradas / Entre contas
 let editandoId = null;
 
 // ---------- Login ----------
@@ -83,8 +84,16 @@ async function carregar() {
   render();
 }
 
-$('#mes-ant').onclick = () => { mes = mesDeslocado(mes, -1); filtroCat = null; carregar(); };
-$('#mes-prox').onclick = () => { mes = mesDeslocado(mes, 1); filtroCat = null; carregar(); };
+$('#mes-ant').onclick = () => { mes = mesDeslocado(mes, -1); filtroCat = null; filtroTipo = null; carregar(); };
+$('#mes-prox').onclick = () => { mes = mesDeslocado(mes, 1); filtroCat = null; filtroTipo = null; carregar(); };
+$('#btn-entradas').onclick = () => filtrarTipo('receita');
+$('#entre-contas').onclick = () => filtrarTipo('transferencia');
+function filtrarTipo(tipo) {
+  filtroTipo = filtroTipo === tipo ? null : tipo;
+  filtroCat = null;
+  render();
+  if (filtroTipo) document.querySelector('.lista-titulo').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
 
 // ---------- Ícones ----------
 function iconeTransacao(t, classe = '') {
@@ -102,6 +111,14 @@ function render() {
   $('#total-gastos').classList.toggle('longo', fmt(totalG).length > 12);
   $('#total-receitas').textContent = fmt(totalR);
   $('#saldo').textContent = fmt(totalR - totalG);
+  $('#btn-entradas').classList.toggle('ativo', filtroTipo === 'receita');
+  const entre = transacoes.filter((t) => t.tipo === 'transferencia');
+  const bEntre = $('#entre-contas');
+  bEntre.hidden = !entre.length;
+  bEntre.classList.toggle('ativo', filtroTipo === 'transferencia');
+  // cada Pix entre vocês aparece duas vezes (saiu de um, entrou no outro): conta só uma
+  const movido = soma(entre.filter((t) => !t.par_id || t.tipo_original !== 'receita'));
+  bEntre.textContent = `🔁 ${fmt(movido)} passaram entre contas de vocês · fora das contas ›`;
 
   // Comparativo com o mês anterior + humor do mascote
   const comp = $('#comparativo');
@@ -263,17 +280,27 @@ function renderCategorias(gastos, totalG) {
 
 function renderLista() {
   const filtro = $('#filtro-ativo');
-  filtro.hidden = !filtroCat;
+  filtro.hidden = !filtroCat && !filtroTipo;
   if (filtroCat) {
     filtro.textContent = `${cat(filtroCat).e} ${filtroCat}  ✕`;
     filtro.onclick = () => { filtroCat = null; render(); };
+  } else if (filtroTipo) {
+    filtro.textContent = `${filtroTipo === 'receita' ? '💰 Só entradas' : '🔁 Entre contas'}  ✕`;
+    filtro.onclick = () => { filtroTipo = null; render(); };
   }
-  const itens = filtroCat ? transacoes.filter((t) => t.categoria === filtroCat) : transacoes;
+  const itens = filtroCat ? transacoes.filter((t) => t.categoria === filtroCat && t.tipo === 'despesa')
+    : filtroTipo ? transacoes.filter((t) => t.tipo === filtroTipo) : transacoes;
   const lista = $('#lista');
   lista.innerHTML = '';
   if (!itens.length) {
     lista.innerHTML = '<p class="vazio" style="padding:8px 6px">Nada por aqui ainda.</p>';
     return;
+  }
+  if (filtroTipo === 'receita') {
+    const dica = document.createElement('p');
+    dica.className = 'dica-lista';
+    dica.textContent = 'Alguma não é dinheiro novo (Pix entre vocês, de outra conta sua)? Toque nela e escolha "🔁 Entre contas".';
+    lista.append(dica);
   }
   let grupo = null;
   let diaAtual = '';
@@ -293,6 +320,7 @@ function renderLista() {
       ? '<span class="tag-classificar">A classificar</span>'
       : esc(t.categoria);
     const receita = t.tipo === 'receita';
+    const entre = t.tipo === 'transferencia';
     const vinc = t.plano_id ? itensPlano.find((i) => i.id === t.plano_id) : null;
     b.innerHTML = `
       ${iconeTransacao(t)}
@@ -300,7 +328,8 @@ function renderLista() {
         <span class="desc">${esc(t.descricao || t.categoria)}</span>
         <span class="meta">${MEIOS[t.meio] ? `<span title="${MEIOS[t.meio].n}">${MEIOS[t.meio].e}</span> ` : ''}${vinc ? `<b class="vinc">🔗 ${esc(nomeItem(vinc))}</b> · ` : ''}${nomeCat} · ${esc(t.pessoa)}${t.conta ? ' · ' + esc(t.conta) : ''}${t.origem === 'atalho' ? ' · iPhone' : t.origem === 'banco' ? ' · 🏦' : ''}</span>
       </span>
-      <span class="valor ${receita ? 'positivo' : ''}">${receita ? '+' : '−'} ${fmt(t.valor)}</span>`;
+      <span class="valor ${receita ? 'positivo' : entre ? 'neutro' : ''}">${entre ? '🔁' : receita ? '+' : '−'} ${fmt(t.valor)}</span>`;
+    if (entre) b.classList.add('item-entre');
     b.onclick = () => abrirForm(t);
     grupo.append(b);
   }
@@ -324,6 +353,7 @@ function montarFormulario() {
     .map(([k, m]) => `<label><input type="radio" name="meio" value="${k}"><span><span class="icone" style="--c:var(--c-outros)">${m.e}</span>${m.n}</span></label>`).join('');
 
   $('#form').descricao.addEventListener('input', atualizarIconeDesc);
+  $('#form').addEventListener('change', (e) => { if (e.target.name === 'tipo') atualizarTipoForm(); });
   for (const ev of ['input', 'change']) $('#form').addEventListener(ev, (e) => {
     if (e.target.name === 'plano_id') { vinculoManual = true; $('#vinculo-dica').textContent = ''; return; }
     sugerirNoForm();
@@ -383,10 +413,21 @@ function abrirForm(t = null) {
   marcar('meio', t ? (t.meio || '') : (lsGet('meio') || ''));
   montarVinculo(t);
   vinculoManual = !!t; // ao editar, mantém o vínculo que já existe
+  atualizarTipoForm();
   f.data.value = t?.data || hojeLocal();
   atualizarIconeDesc();
   $('#dlg').showModal();
   if (!t) setTimeout(() => f.valor.focus(), 50);
+}
+
+// "Entre contas" não tem categoria nem conta prevista: esconde o que não se aplica
+function atualizarTipoForm() {
+  const entre = $('#form').tipo.value === 'transferencia';
+  $('#dica-entre').hidden = !entre;
+  $('#chips-categoria').hidden = entre;
+  $('#chips-categoria').previousElementSibling.hidden = entre;
+  if (entre) { $('#campo-vinculo').hidden = true; $('#sel-vinculo').value = ''; }
+  else $('#campo-vinculo').hidden = !itensPagaveis(itensPlano).length;
 }
 
 $('#btn-novo').onclick = () => abrirForm();

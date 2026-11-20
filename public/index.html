@@ -49,9 +49,10 @@
       <strong id="total-gastos" class="hero-valor">R$ 0,00</strong>
       <span id="comparativo" class="pilula" hidden></span>
       <div class="hero-linha">
-        <div><span>Entradas</span><b id="total-receitas">R$ 0,00</b></div>
+        <button type="button" id="btn-entradas" class="hero-toque"><span>Entradas ›</span><b id="total-receitas">R$ 0,00</b></button>
         <div><span>Saldo</span><b id="saldo">R$ 0,00</b></div>
       </div>
+      <button type="button" id="entre-contas" class="hero-entre" hidden></button>
       <div id="por-pessoa" class="hero-pessoas"></div>
     </section>
 
@@ -213,7 +214,9 @@
       <div class="seg" role="radiogroup">
         <label><input type="radio" name="tipo" value="despesa" checked><span>Gasto</span></label>
         <label><input type="radio" name="tipo" value="receita"><span>Entrada</span></label>
+        <label><input type="radio" name="tipo" value="transferencia"><span>🔁 Entre contas</span></label>
       </div>
+      <p id="dica-entre" class="dica-entre" hidden>Dinheiro passando de uma conta para outra da casa (Pix entre vocês, para outra conta sua). Não conta como entrada nem como gasto.</p>
       <label class="campo-valor">
         <span>R$</span>
         <input name="valor" inputmode="decimal" placeholder="0,00" autocomplete="off" required>
