@@ -3,7 +3,8 @@ import { DurableObject } from 'cloudflare:workers';
 import { paraCentavos } from './valores.js';
 import { ESTATICOS } from './estaticos.js';
 import { enviarPush } from './push.js';
-import { PLUGGY_BASE, clientePluggy, classificar, acharDuplicado, situacaoItem, nomeDaConta, categoriaDoPluggy } from './pluggy.js';
+import { sugerirVinculo, mesReferencia, diaVencimento, itensPagaveis, nomeItem } from '../public/vinculos.js';
+import { PLUGGY_BASE, clientePluggy, ehPagamentoFatura, classificar, acharDuplicado, situacaoItem, nomeDaConta, categoriaDoPluggy } from './pluggy.js';
 
 const CATEGORIAS = [
   'Mercado', 'Alimentação', 'Casa', 'Transporte', 'Saúde', 'Lazer',
@@ -76,6 +77,16 @@ const SCHEMA = [
     contas       TEXT NOT NULL DEFAULT '[]',
     aviso_em     TEXT
   )`,
+  // Contas marcadas como pagas sem um gasto (ex.: pagamento da fatura do cartão, que não é gasto)
+  `CREATE TABLE IF NOT EXISTS contas_pagas (
+    chave     TEXT PRIMARY KEY,                 -- 'pluggy-<id>' ou 'manual-<plano_id>-<mes>'
+    plano_id  INTEGER NOT NULL,
+    plano_mes TEXT NOT NULL,
+    valor     INTEGER NOT NULL,
+    data      TEXT NOT NULL,
+    descricao TEXT NOT NULL DEFAULT '',
+    origem    TEXT NOT NULL DEFAULT 'manual'
+  )`,
   // Planejador: salários, contas fixas, cartões e ajustes (dados em JSON)
   `CREATE TABLE IF NOT EXISTS plano (
     id    INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -108,6 +119,9 @@ export class Casa extends DurableObject {
     try { ctx.storage.sql.exec(`ALTER TABLE transacoes ADD COLUMN externo_id TEXT`); } catch {}
     // Forma de pagamento: credito | debito | pix | boleto | transferencia | dinheiro | '' (não informada)
     try { ctx.storage.sql.exec(`ALTER TABLE transacoes ADD COLUMN meio TEXT NOT NULL DEFAULT ''`); } catch {}
+    // Vínculo com uma conta prevista do planejador (id em plano) e o mês a que o pagamento se refere
+    try { ctx.storage.sql.exec(`ALTER TABLE transacoes ADD COLUMN plano_id INTEGER`); } catch {}
+    try { ctx.storage.sql.exec(`ALTER TABLE transacoes ADD COLUMN plano_mes TEXT`); } catch {}
     ctx.storage.sql.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_transacoes_externo ON transacoes(externo_id) WHERE externo_id IS NOT NULL`);
     this.db = bancoSql(ctx.storage.sql);
   }
@@ -183,22 +197,27 @@ async function rotear(req, env, url) {
     return json(results);
   }
   if (pathname === '/api/transacoes' && m === 'POST') {
-    const t = validar(await req.json(), env);
-    const r = await env.DB.prepare(
+    const corpo = await req.json();
+    const t = validar(corpo, env);
+    let r = await env.DB.prepare(
       `INSERT INTO transacoes (data, valor, tipo, categoria, pessoa, conta, descricao, origem, meio)
        VALUES (?, ?, ?, ?, ?, ?, ?, 'manual', ?) RETURNING *`
     ).bind(t.data, t.valor, t.tipo, t.categoria, t.pessoa, t.conta, t.descricao, t.meio).first();
+    // plano_id ausente = vínculo automático; null/'' = sem vínculo; número = a conta escolhida
+    r = await vincular(env, r, 'plano_id' in corpo ? corpo.plano_id : undefined);
     await notificarLancamento(env, r);
     return json(r, 201);
   }
   const mId = pathname.match(/^\/api\/transacoes\/(\d+)$/);
   if (mId && m === 'PUT') {
-    const t = validar(await req.json(), env);
-    const r = await env.DB.prepare(
+    const corpo = await req.json();
+    const t = validar(corpo, env);
+    let r = await env.DB.prepare(
       `UPDATE transacoes SET data=?, valor=?, tipo=?, categoria=?, pessoa=?, conta=?, descricao=?, meio=?
        WHERE id=? RETURNING *`
     ).bind(t.data, t.valor, t.tipo, t.categoria, t.pessoa, t.conta, t.descricao, t.meio, Number(mId[1])).first();
     if (!r) throw erro(404, 'Lançamento não encontrado');
+    if ('plano_id' in corpo) r = await vincular(env, r, corpo.plano_id || null);
     return json(r);
   }
   if (mId && m === 'DELETE') {
@@ -268,13 +287,35 @@ async function rotear(req, env, url) {
   if (pathname === '/api/plano' && m === 'GET') {
     const { results } = await env.DB.prepare(`SELECT * FROM plano ORDER BY id`).all();
     const itens = results.map((r) => ({ id: r.id, tipo: r.tipo, ...JSON.parse(r.dados) }));
-    return json({ itens, gastoVariavel: await gastoVariavelMedio(env) });
+    const hoje = hojeSP();
+    const meses = [-1, 0, 1].map((n) => somaMesesISO(hoje.slice(0, 7), n));
+    const { results: pagamentos } = await env.DB.prepare(
+      `SELECT id, valor, data, descricao, pessoa, plano_id, plano_mes FROM transacoes WHERE plano_id IS NOT NULL AND plano_mes IN (?, ?, ?)`
+    ).bind(...meses).all();
+    const { results: marcadas } = await env.DB.prepare(
+      `SELECT chave, valor, data, descricao, plano_id, plano_mes, origem FROM contas_pagas WHERE plano_mes IN (?, ?, ?)`
+    ).bind(...meses).all();
+    return json({ itens, pagamentos: [...pagamentos, ...marcadas.map((x) => ({ ...x, id: null, marcada: true }))], gastoVariavel: await gastoVariavelMedio(env) });
   }
   if (pathname === '/api/plano' && m === 'POST') {
     const { tipo, dados } = validarPlano(await req.json());
     const r = await env.DB.prepare(`INSERT INTO plano (tipo, dados) VALUES (?, ?) RETURNING id`)
       .bind(tipo, JSON.stringify(dados)).first();
     return json({ id: r.id, tipo, ...dados }, 201);
+  }
+  const mPaga = pathname.match(/^\/api\/plano\/(\d+)\/paga$/);
+  if (mPaga && (m === 'POST' || m === 'DELETE')) {
+    const item = itensPagaveis(await itensDoPlano(env)).find((i) => i.id === Number(mPaga[1]));
+    if (!item) throw erro(404, 'Conta prevista não encontrada');
+    const b = m === 'POST' ? await req.json().catch(() => ({})) : {};
+    const mes = /^\d{4}-\d{2}$/.test(b.mes || url.searchParams.get('mes') || '') ? (b.mes || url.searchParams.get('mes')) : hojeSP().slice(0, 7);
+    if (m === 'DELETE') {
+      await env.DB.prepare(`DELETE FROM contas_pagas WHERE plano_id=? AND plano_mes=?`).bind(item.id, mes).run();
+      return json({ ok: true });
+    }
+    await env.DB.prepare(`INSERT OR REPLACE INTO contas_pagas (chave, plano_id, plano_mes, valor, data, descricao, origem) VALUES (?, ?, ?, ?, ?, ?, 'manual')`)
+      .bind(`manual-${item.id}-${mes}`, item.id, mes, item.valor || 0, hojeSP(), 'Marcada como paga').run();
+    return json({ ok: true });
   }
   const mPlano = pathname.match(/^\/api\/plano\/(\d+)$/);
   if (mPlano && m === 'PUT') {
@@ -493,10 +534,11 @@ async function atalho(req, env, corpoTxt, tipo) {
   const conta = normalizarConta(b.cartao);
   const data = hojeSP();
 
-  const r = await env.DB.prepare(
+  let r = await env.DB.prepare(
     `INSERT INTO transacoes (data, valor, tipo, categoria, pessoa, conta, descricao, origem)
      VALUES (?, ?, 'despesa', ?, ?, ?, ?, 'atalho') RETURNING *`
   ).bind(data, valor, categoria, pessoa, conta, estabelecimento).first();
+  r = await vincular(env, r);
 
   // Texto pronto para a notificação no iPhone
   const { total } = await env.DB.prepare(
@@ -506,10 +548,57 @@ async function atalho(req, env, corpoTxt, tipo) {
   const linha1 = categoria === 'A classificar'
     ? `📝 Anotado: ${reais(valor)}${onde}. Abra o pagaAI para escolher a categoria.`
     : `✅ Anotado: ${reais(valor)}${onde} (${categoria})`;
-  const mensagem = `${linha1}\nGastos de ${NOMES_MES[Number(data.slice(5, 7)) - 1]}: ${reais(total)}`;
+  const conta_paga = r.plano_id ? (await itensDoPlano(env)).find((i) => i.id === r.plano_id) : null;
+  const mensagem = `${linha1}${conta_paga ? `\n🔗 Pagamento: ${nomeItem(conta_paga)}` : ''}\nGastos de ${NOMES_MES[Number(data.slice(5, 7)) - 1]}: ${reais(total)}`;
 
   await notificarLancamento(env, r);
   return mensagem;
+}
+
+// ---------- Vínculo com contas previstas ----------
+
+const somaMesesISO = (ym, n) => {
+  const d = new Date(Date.UTC(+ym.slice(0, 4), +ym.slice(5, 7) - 1 + n, 1));
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
+};
+
+async function itensDoPlano(env) {
+  const { results } = await env.DB.prepare(`SELECT * FROM plano`).all();
+  return results.map((r) => ({ id: r.id, tipo: r.tipo, ...JSON.parse(r.dados) }));
+}
+
+// O banco mostrou o pagamento de uma fatura: marca o cartão certo como pago naquele mês
+async function registrarFaturaPaga(env, t, nomeContaOrigem) {
+  const cartoes = (await itensDoPlano(env)).filter((i) => i.tipo === 'cartao');
+  if (!cartoes.length) return;
+  const desc = String(t.description || '').toLowerCase();
+  const cartao = cartoes.find((c) => desc.includes(String(c.nome).toLowerCase()))
+    || cartoes.find((c) => String(c.nome).toLowerCase() === String(nomeContaOrigem).toLowerCase())
+    || (cartoes.length === 1 ? cartoes[0] : null);
+  if (!cartao) return;
+  const data = String(t.date).slice(0, 10);
+  await env.DB.prepare(`INSERT OR IGNORE INTO contas_pagas (chave, plano_id, plano_mes, valor, data, descricao, origem) VALUES (?, ?, ?, ?, ?, ?, 'banco')`)
+    .bind(`pluggy-${t.id}`, cartao.id, mesReferencia(data, cartao.vencimento), Math.round(Math.abs(t.amount) * 100), data, String(t.description || '').slice(0, 120)).run();
+}
+
+// escolha: undefined = automático (só se o gasto ainda não tiver vínculo); null = sem vínculo; id = conta escolhida
+async function vincular(env, r, escolha) {
+  if (!r) return r;
+  let id = null, mes = null;
+  if (escolha === undefined) {
+    if (r.plano_id || r.tipo !== 'despesa') return r;
+    const itens = await itensDoPlano(env);
+    if (!itensPagaveis(itens).length) return r;
+    const { results } = await env.DB.prepare(`SELECT plano_id, plano_mes FROM transacoes WHERE plano_id IS NOT NULL AND id != ?`).bind(r.id).all();
+    const s = sugerirVinculo(r, itens, new Set(results.map((p) => `${p.plano_id}:${p.plano_mes}`)));
+    if (!s) return r;
+    id = s.id; mes = s.mes;
+  } else if (escolha !== null && escolha !== '') {
+    const item = itensPagaveis(await itensDoPlano(env)).find((i) => i.id === Number(escolha));
+    if (!item) throw erro(400, 'Conta prevista não encontrada');
+    id = item.id; mes = mesReferencia(r.data, diaVencimento(item));
+  }
+  return (await env.DB.prepare(`UPDATE transacoes SET plano_id=?, plano_mes=? WHERE id=? RETURNING *`).bind(id, mes, r.id).first()) || r;
 }
 
 // ---------- Bancos: Meu Pluggy ----------
@@ -669,7 +758,13 @@ async function sincronizarPessoa(env, pessoa, { manual = false } = {}) {
             }
             continue;
           }
-          if (!c.importar) { resumo.ignorados++; continue; }
+          if (!c.importar) {
+            resumo.ignorados++;
+            if (conta.type !== 'CREDIT' && t.amount < 0 && t.status !== 'PENDING' && ehPagamentoFatura(t)) {
+              await registrarFaturaPaga(env, t, nomeConta);
+            }
+            continue;
+          }
           const nova = { tipo: c.tipo, valor: c.valor, data: c.data, conta: nomeConta };
           const { results: perto } = await env.DB.prepare(
             `SELECT id, tipo, valor, data, conta, externo_id FROM transacoes WHERE externo_id IS NULL AND data BETWEEN ? AND ?`
@@ -684,10 +779,11 @@ async function sincronizarPessoa(env, pessoa, { manual = false } = {}) {
           }
           let categoria = categoriaDoPluggy(c.categoriaPluggy) || categorizar(c.descricao);
           if (c.tipo === 'receita' && categoria === 'A classificar') categoria = 'Outros';
-          const r = await env.DB.prepare(
+          let r = await env.DB.prepare(
             `INSERT INTO transacoes (data, valor, tipo, categoria, pessoa, conta, descricao, origem, externo_id, meio)
              VALUES (?, ?, ?, ?, ?, ?, ?, 'banco', ?, ?) RETURNING *`
           ).bind(c.data, c.valor, c.tipo, categoria, pessoa, nomeConta, c.descricao, String(t.id), c.meio).first();
+          r = await vincular(env, r);
           resumo.importados++;
           novos.push(r);
         }
@@ -727,7 +823,9 @@ async function notificarLancamento(env, t) {
     ).bind(entrada ? 'receita' : 'despesa', t.data.slice(0, 7)).first();
     const detalhes = [...new Set([t.descricao, t.categoria, t.pessoa, t.conta])]
       .filter((x) => x && x !== 'A classificar').join(' · ');
-    const aviso = t.categoria === 'A classificar' ? '\nToque para escolher a categoria.' : '';
+    const contaPaga = t.plano_id ? (await itensDoPlano(env)).find((i) => i.id === t.plano_id) : null;
+    const aviso = (t.categoria === 'A classificar' ? '\nToque para escolher a categoria.' : '') +
+      (contaPaga ? `\n🔗 Pagamento: ${nomeItem(contaPaga)}` : '');
     await notificar(env, {
       titulo: entrada ? `💰 Entrada de ${reais(t.valor)}` : `💸 Saída de ${reais(t.valor)}`,
       corpo: `${detalhes}${aviso}\n${entrada ? 'Entradas' : 'Gastos'} de ${NOMES_MES[Number(t.data.slice(5, 7)) - 1]}: ${reais(total)}`,

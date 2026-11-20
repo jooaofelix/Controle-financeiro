@@ -1,7 +1,8 @@
 import {
   $, fmt, esc, api, aoDeslogar, CATS, cat, corCat, marcaDe, iconeMarca, iconeCategoria, MARCAS, mascote, toast, MEIOS,
 } from '/comum.js';
-import { contasDoMes } from '/dividas.js';
+import { contasDoMes, parcelaDoMes } from '/dividas.js';
+import { sugerirVinculo, situacaoMes, itensPagaveis, nomeItem } from '/vinculos.js';
 import { registrarSW, bannerInicio } from '/notificacoes.js';
 import { abrirPlano } from '/plano.js';
 
@@ -12,6 +13,8 @@ let mes = hojeLocal().slice(0, 7);
 let transacoes = [];
 let totalMesAnterior = 0;
 let itensPlano = [];
+let pagamentosPlano = []; // gastos já vinculados a contas previstas (meses próximos)
+let vinculoManual = false; // a pessoa escolheu o vínculo no formulário (não sobrescrever com sugestão)
 let filtroCat = null;
 let editandoId = null;
 
@@ -75,6 +78,7 @@ async function carregar() {
   ]);
   transacoes = atual;
   itensPlano = plano.itens;
+  pagamentosPlano = plano.pagamentos || [];
   totalMesAnterior = soma(anterior.filter((t) => t.tipo === 'despesa'));
   render();
 }
@@ -160,33 +164,40 @@ function renderComoPagaram(gastos, totalG) {
   }).join('');
 }
 
+// Contas previstas ativas no mês (dívida só enquanto tiver parcela naquele mês)
+function pagaveisNoMes(ym) {
+  return itensPagaveis(itensPlano).filter((i) => i.tipo !== 'divida' || (parcelaDoMes(i, ym) >= 1 && parcelaDoMes(i, ym) <= i.total))
+    .filter((i) => i.tipo !== 'cartao' || i.valor > 0);
+}
+const proxMes = (ym) => { const [a, m] = ym.split('-').map(Number); return m === 12 ? `${a + 1}-01` : `${a}-${String(m + 1).padStart(2, '0')}`; };
+
 // Contas e faturas que vencem nos próximos 7 dias (do planejador)
 function renderProximas() {
   const card = $('#proximas');
-  const hoje = new Date();
-  if (mes !== hojeLocal().slice(0, 7)) { card.hidden = true; return; }
-  const ultimoDia = new Date(hoje.getFullYear(), hoje.getMonth() + 1, 0).getDate();
-  const ym = hojeLocal().slice(0, 7);
-  const parcelas = contasDoMes(itensPlano.filter((i) => i.tipo === 'divida'), ym);
-  const vencendo = [...itensPlano, ...parcelas]
-    .filter((i) => i.tipo === 'conta' || (i.tipo === 'cartao' && i.valor > 0))
-    .map((i) => {
-      const dia = Math.min(i.tipo === 'cartao' ? i.vencimento : i.dia, ultimoDia);
-      const faltam = (dia - hoje.getDate() + ultimoDia) % ultimoDia;
-      return { ...i, dia, faltam, nomeExib: i.tipo === 'cartao' ? 'Fatura ' + i.nome : i.nome };
-    })
-    .filter((i) => i.faltam <= 7)
-    .sort((a, b) => a.faltam - b.faltam);
-  card.hidden = !vencendo.length;
-  if (!vencendo.length) return;
-  const total = vencendo.reduce((s, i) => s + i.valor, 0);
-  $('#proximas-total').textContent = fmt(total);
-  $('#proximas-lista').innerHTML = vencendo.map((i) => {
-    const m = marcaDe(i.nomeExib);
-    const ic = m ? iconeMarca(m, 'icone-p') : iconeCategoria(i.categoria || 'Casa', 'icone-p');
-    const quando = i.faltam === 0 ? '<b class="negativo">hoje</b>' : i.faltam === 1 ? '<b>amanhã</b>' : `em ${i.faltam} dias`;
-    return `<div class="prox-item">${ic}<span>${esc(i.nomeExib)}<small>dia ${i.dia} · ${quando}</small></span><b>${fmt(i.valor)}</b></div>`;
-  }).join('');
+  const hojeISO = hojeLocal();
+  const ym = hojeISO.slice(0, 7);
+  if (mes !== ym) { card.hidden = true; return; }
+  const doMes = situacaoMes(pagaveisNoMes(ym), pagamentosPlano, ym, hojeISO);
+  const seguinte = situacaoMes(pagaveisNoMes(proxMes(ym)), pagamentosPlano, proxMes(ym), hojeISO);
+  const atrasadas = doMes.filter((c) => c.estado === 'atrasada');
+  const breve = [...doMes, ...seguinte].filter((c) => c.estado === 'pendente' && c.diasPara >= 0 && c.diasPara <= 7)
+    .sort((x, y) => x.diasPara - y.diasPara);
+  const lista = [...atrasadas, ...breve];
+  const pagas = doMes.filter((c) => c.estado === 'paga').length;
+  card.hidden = !lista.length && !doMes.length;
+  if (card.hidden) return;
+  $('#proximas-total').textContent = lista.length ? fmt(lista.reduce((s, c) => s + c.previsto, 0)) : '';
+  const item = (id) => itensPlano.find((i) => i.id === id) || {};
+  const resumo = doMes.length ? `<p class="prox-resumo">✅ ${pagas} de ${doMes.length} contas do mês pagas</p>` : '';
+  $('#proximas-lista').innerHTML = lista.map((c) => {
+    const it = item(c.id);
+    const m = marcaDe(c.nome);
+    const ic = m ? iconeMarca(m, 'icone-p') : iconeCategoria(it.categoria || 'Casa', 'icone-p');
+    const dia = Number(c.venc.slice(8, 10));
+    const quando = c.estado === 'atrasada' ? `<b class="negativo">venceu dia ${dia} · sem pagamento</b>`
+      : c.diasPara === 0 ? '<b class="negativo">vence hoje</b>' : c.diasPara === 1 ? '<b>amanhã</b>' : `dia ${dia} · em ${c.diasPara} dias`;
+    return `<div class="prox-item ${c.estado}">${ic}<span>${esc(c.nome)}<small>${quando}</small></span><b>${fmt(c.previsto)}</b></div>`;
+  }).join('') + (lista.length ? '' : '<p class="vazio">Nada vencendo nos próximos 7 dias. 🎉</p>') + resumo;
 }
 
 function renderCategorias(gastos, totalG) {
@@ -255,11 +266,12 @@ function renderLista() {
       ? '<span class="tag-classificar">A classificar</span>'
       : esc(t.categoria);
     const receita = t.tipo === 'receita';
+    const vinc = t.plano_id ? itensPlano.find((i) => i.id === t.plano_id) : null;
     b.innerHTML = `
       ${iconeTransacao(t)}
       <span class="meio">
         <span class="desc">${esc(t.descricao || t.categoria)}</span>
-        <span class="meta">${MEIOS[t.meio] ? `<span title="${MEIOS[t.meio].n}">${MEIOS[t.meio].e}</span> ` : ''}${nomeCat} · ${esc(t.pessoa)}${t.conta ? ' · ' + esc(t.conta) : ''}${t.origem === 'atalho' ? ' · iPhone' : t.origem === 'banco' ? ' · 🏦' : ''}</span>
+        <span class="meta">${MEIOS[t.meio] ? `<span title="${MEIOS[t.meio].n}">${MEIOS[t.meio].e}</span> ` : ''}${vinc ? `<b class="vinc">🔗 ${esc(nomeItem(vinc))}</b> · ` : ''}${nomeCat} · ${esc(t.pessoa)}${t.conta ? ' · ' + esc(t.conta) : ''}${t.origem === 'atalho' ? ' · iPhone' : t.origem === 'banco' ? ' · 🏦' : ''}</span>
       </span>
       <span class="valor ${receita ? 'positivo' : ''}">${receita ? '+' : '−'} ${fmt(t.valor)}</span>`;
     b.onclick = () => abrirForm(t);
@@ -285,6 +297,10 @@ function montarFormulario() {
     .map(([k, m]) => `<label><input type="radio" name="meio" value="${k}"><span><span class="icone" style="--c:var(--c-outros)">${m.e}</span>${m.n}</span></label>`).join('');
 
   $('#form').descricao.addEventListener('input', atualizarIconeDesc);
+  for (const ev of ['input', 'change']) $('#form').addEventListener(ev, (e) => {
+    if (e.target.name === 'plano_id') { vinculoManual = true; $('#vinculo-dica').textContent = ''; return; }
+    sugerirNoForm();
+  });
   $('#chips-categoria').addEventListener('change', atualizarIconeDesc);
 }
 
@@ -293,6 +309,31 @@ function atualizarIconeDesc() {
   const m = marcaDe(f.descricao.value);
   const html = m ? iconeMarca(m, 'icone-p') : iconeCategoria(f.categoria.value || 'Outros', 'icone-p');
   $('#desc-icone').outerHTML = html.replace('<span class="icone', '<span id="desc-icone" class="icone');
+}
+
+function montarVinculo(t) {
+  const sel = $('#sel-vinculo');
+  const opcoes = itensPagaveis(itensPlano);
+  $('#campo-vinculo').hidden = !opcoes.length;
+  const grupos = { conta: 'Contas fixas', divida: 'Dívidas no boleto', cartao: 'Faturas de cartão' };
+  sel.innerHTML = '<option value="">— nenhuma —</option>' + Object.entries(grupos).map(([tipo, rot]) => {
+    const its = opcoes.filter((i) => i.tipo === tipo);
+    return its.length ? `<optgroup label="${rot}">${its.map((i) => `<option value="${i.id}">${esc(nomeItem(i))} · ${fmt(i.valor || 0)}</option>`).join('')}</optgroup>` : '';
+  }).join('');
+  sel.value = t?.plano_id ? String(t.plano_id) : '';
+  $('#vinculo-dica').textContent = '';
+}
+
+// Sugere a conta prevista enquanto a pessoa preenche (só se ela não escolheu nada à mão)
+function sugerirNoForm() {
+  if (vinculoManual || $('#campo-vinculo').hidden) return;
+  const f = $('#form');
+  const valor = Math.round(parseFloat(String(f.valor.value).replace(/\./g, '').replace(',', '.')) * 100) || 0;
+  const tx = { tipo: f.tipo.value, valor, data: f.data.value, descricao: f.descricao.value, meio: f.meio.value };
+  const pagos = new Set(pagamentosPlano.filter((p) => p.id !== editandoId).map((p) => `${p.plano_id}:${p.plano_mes}`));
+  const s = valor && tx.data ? sugerirVinculo(tx, itensPlano, pagos) : null;
+  $('#sel-vinculo').value = s ? String(s.id) : '';
+  $('#vinculo-dica').textContent = s ? '· sugerido' : '';
 }
 
 function marcar(nome, valor) {
@@ -313,6 +354,8 @@ function abrirForm(t = null) {
   marcar('pessoa', t?.pessoa || lsGet('pessoa') || config.pessoas[0]);
   marcar('conta', t?.conta || lsGet('conta') || '');
   marcar('meio', t ? (t.meio || '') : (lsGet('meio') || ''));
+  montarVinculo(t);
+  vinculoManual = !!t; // ao editar, mantém o vínculo que já existe
   f.data.value = t?.data || hojeLocal();
   atualizarIconeDesc();
   $('#dlg').showModal();
@@ -334,6 +377,7 @@ $('#form').addEventListener('submit', async (e) => {
     pessoa: f.pessoa.value,
     conta: f.conta.value,
     meio: f.meio.value || '',
+    plano_id: f.plano_id.value ? Number(f.plano_id.value) : null,
     data: f.data.value,
   };
   try {

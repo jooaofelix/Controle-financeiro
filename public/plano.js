@@ -3,6 +3,7 @@ import { $, fmt, fmtCurto, esc, api, CATS, cat, corCat, marcaDe, iconeMarca, ico
 import { planejar, DIAS } from '/planejador.js';
 import { cartaoNotificacoes } from '/notificacoes.js';
 import { cartaoBancos } from '/bancos.js';
+import { situacaoMes } from '/vinculos.js';
 import { situacao, resumoDividas, contasDoMes, parcelasNoCartao, inicioDe, parcelaDoMes, mesAno } from '/dividas.js';
 
 function hojeLocal() {
@@ -18,7 +19,8 @@ let resultado = null;
 let verSugestao = true;
 let diaSelecionado = null;
 let editando = null; // { tipo, item? }
-let lancRecentes = []; // lançamentos deste mês e do anterior (para a fatura atual)
+let lancRecentes = [];
+let pagamentos = []; // gastos vinculados a contas previstas // lançamentos deste mês e do anterior (para a fatura atual)
 
 export async function abrirPlano(cfg) {
   config = cfg;
@@ -31,6 +33,7 @@ export async function abrirPlano(cfg) {
   ]);
   lancRecentes = [...l1, ...l2];
   itens = dados.itens;
+  pagamentos = dados.pagamentos || [];
   gastoEstimado = dados.gastoVariavel;
   render();
   renderDiario(log);
@@ -180,7 +183,7 @@ function renderListas(plano) {
   $('#lista-contas').innerHTML = plano.contas
     .filter((c) => !c.divida)
     .sort((a, b) => a.dia - b.dia)
-    .map((c) => linha(c, esc(c.nome), `Vence dia ${c.dia}${c.flexivel ? ' · <span class="tag-flex">pode mudar</span>' : ''}`, fmt(c.valor))).join('')
+    .map((c) => linha(c, esc(c.nome), `Vence dia ${c.dia}${c.flexivel ? ' · <span class="tag-flex">pode mudar</span>' : ''}${statusDoMes(c)}`, fmt(c.valor))).join('')
     || '<p class="vazio">Aluguel, luz, água, internet, escola...</p>';
   $('#lista-cartoes').innerHTML = resultado.cartoes.map((c) => {
     const orig = plano.cartoes.find((x) => x.id === c.id);
@@ -189,7 +192,7 @@ function renderListas(plano) {
     return linha(orig, esc(c.nome),
       `Fecha dia ${orig.fechamento} · vence dia ${orig.vencimento}<br><span class="compra">🛍️ Melhor dia de compra: <b>dia ${(orig.fechamento % DIAS) + 1}</b> (até ${c.prazo} dias para pagar)</span>` +
       (fat.total ? `<br>💳 <b>Fatura atual: ${fmt(fat.total)}</b> <small class="sutil">(${fat.qtd} compras de ${fat.de} a ${fat.ate})</small>` : '') +
-      (parcelas ? `<br>🧾 Inclui ${fmt(parcelas)} em parcelas este mês` : ''),
+      (parcelas ? `<br>🧾 Inclui ${fmt(parcelas)} em parcelas este mês` : '') + (orig.valor ? statusDoMes(orig) : ''),
       c.valor ? fmt(c.valor) : '');
   }).join('') || '<p class="vazio">Cadastre Nubank e Inter para saber o melhor dia de compra.</p>';
 
@@ -202,6 +205,18 @@ function renderListas(plano) {
   $('#ajuste-variavel-origem').textContent = gv != null
     ? 'definido por vocês'
     : gastoEstimado.meses ? `média dos lançamentos (${gastoEstimado.meses} ${gastoEstimado.meses === 1 ? 'mês' : 'meses'})` : 'sem lançamentos ainda';
+
+  // Marcar/desmarcar como paga (sem abrir o editor da conta)
+  document.querySelectorAll('[data-marcar], [data-desmarcar]').forEach((el) => {
+    el.onclick = async (e) => {
+      e.stopPropagation();
+      const id = el.dataset.marcar || el.dataset.desmarcar;
+      if (el.dataset.marcar) await api(`/api/plano/${id}/paga`, { method: 'POST', body: JSON.stringify({ mes: el.dataset.mes }) });
+      else await api(`/api/plano/${id}/paga?mes=${el.dataset.mes}`, { method: 'DELETE' });
+      toast(el.dataset.marcar ? 'recibo' : 'pensando', el.dataset.marcar ? 'Marcada como paga!' : 'Desfeito');
+      abrirPlano(config);
+    };
+  });
 
   document.querySelectorAll('[data-editar]').forEach((b) => {
     b.onclick = () => { const it = itens.find((i) => i.id === Number(b.dataset.editar)); abrirEditor(it.tipo, it); };
@@ -258,12 +273,30 @@ function renderDividas() {
       ${iconeItem(d)}
       <span class="meio">
         <span class="desc">${esc(d.nome)}</span>
-        <span class="meta multi">${status}<br>${esc(PAGAMENTOS[d.pagamento] || '')} · dia ${d.dia}</span>
+        <span class="meta multi">${status}<br>${esc(PAGAMENTOS[d.pagamento] || '')} · dia ${d.dia}${d.pagamento === 'boleto' && s.ativaNoMes ? statusDoMes(d) : ''}</span>
         <span class="progresso"><i style="width:${Math.round(s.progresso * 100)}%"></i></span>
       </span>
       <span class="valor">${fmt(d.valor)}<small>${s.quitada ? 'por mês' : `falta ${fmtCurto(s.valorRestante)}`}</small></span>
     </button>`;
   }).join('') || '<p class="vazio">Financiamentos, empréstimos, compras parceladas no carnê ou no cartão...</p>';
+}
+
+// Situação da conta neste mês: ✅ paga / ⏳ pendente / ⚠️ atrasada
+function statusDoMes(item) {
+  const hoje = hojeLocal();
+  const [s] = situacaoMes([item], pagamentos, hoje.slice(0, 7), hoje);
+  if (!s) return '';
+  const br = (iso) => iso.slice(8, 10) + '/' + iso.slice(5, 7);
+  const mes = hoje.slice(0, 7);
+  if (s.estado === 'paga') {
+    const p = s.pagamentos[0];
+    const manual = s.pagamentos.every((x) => x.marcada && x.origem === 'manual');
+    return `<br><span class="status-conta paga">✅ ${manual ? 'Marcada como paga' : `Paga em ${br(p.data)} · ${fmt(s.pago)}`}</span>` +
+      (manual ? ` <span class="link-acao" data-desmarcar="${item.id}" data-mes="${mes}">desfazer</span>` : '');
+  }
+  const marcar = ` <span class="link-acao" data-marcar="${item.id}" data-mes="${mes}">marcar como paga</span>`;
+  if (s.estado === 'atrasada') return '<br><span class="status-conta atrasada">⚠️ Venceu sem pagamento vinculado</span>' + marcar;
+  return `<br><span class="status-conta pendente">⏳ ${s.diasPara === 0 ? 'Vence hoje' : `Vence em ${s.diasPara} ${s.diasPara === 1 ? 'dia' : 'dias'}`}</span>` + marcar;
 }
 
 function linha(item, titulo, sub, valor, classeValor = '') {

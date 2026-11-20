@@ -510,3 +510,15 @@ dialog::backdrop { background: rgb(10 20 15 / 0.45); }
 .meio-txt { flex: 1; min-width: 0; }
 .meio-txt small, .meio-val small { display: block; font-size: 12px; color: var(--sutil); }
 .meio-val { text-align: right; font-variant-numeric: tabular-nums; }
+
+/* Vínculo com conta prevista */
+.campo-vinculo select { width: 100%; padding: 12px; border-radius: 14px; border: 0; background: var(--bg); font-size: 16px; color: var(--texto); }
+.dica-vinculo { color: var(--positivo); font-weight: 700; }
+.prox-item.atrasada span:not(.icone) small { color: var(--negativo); }
+.prox-resumo { margin: 8px 0 0; font-size: 13px; color: var(--sutil); }
+.status-conta { display: inline-block; margin-top: 2px; font-size: 12px; font-weight: 700; border-radius: 8px; padding: 1px 8px; }
+.status-conta.paga { color: var(--positivo); background: color-mix(in srgb, var(--positivo) 14%, var(--card)); }
+.status-conta.atrasada { color: var(--negativo); background: color-mix(in srgb, var(--negativo) 12%, var(--card)); }
+.status-conta.pendente { color: var(--sutil); background: var(--bg); }
+.link-acao { font-size: 12px; font-weight: 700; color: var(--positivo); text-decoration: underline; cursor: pointer; margin-left: 4px; }
+.item .meta .vinc { color: var(--positivo); font-weight: 700; }

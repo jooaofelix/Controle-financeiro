@@ -8,7 +8,8 @@
     "test": "node scripts/testar-planejador.mjs",
     "test:atalho": "node scripts/testar-atalho.mjs",
     "test:push": "node scripts/testar-push.mjs",
-    "test:pluggy": "node scripts/testar-pluggy.mjs"
+    "test:pluggy": "node scripts/testar-pluggy.mjs",
+    "test:vinculos": "node scripts/testar-vinculos.mjs"
   },
   "devDependencies": {
     "simple-icons": "13.21.0",

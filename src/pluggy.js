@@ -60,6 +60,12 @@ export function meioDoPluggy(t, conta) {
   return '';
 }
 
+// Pagamento da fatura do cartão (não é gasto, mas marca a fatura como paga no planejador)
+export function ehPagamentoFatura(t) {
+  return /credit card payment/i.test(t?.category || '') ||
+    /pagamento (de |da )?fatura|pgto fatura|fatura do cart|pagamento de cart[aã]o/i.test(String(t?.description || ''));
+}
+
 // Decide o que fazer com uma transação do Pluggy.
 // Devolve { importar: false, motivo } ou { importar: true, tipo, valor, data, descricao, categoriaPluggy, cartao }
 export function classificar(t, conta) {
