@@ -23,3 +23,7 @@ class_name = "Casa"
 [[migrations]]
 tag = "v1"
 new_sqlite_classes = ["Casa"]
+
+# Busca automática no Meu Pluggy (UTC): 06h, 12h, 18h e 00h — o plano grátis atualiza a cada 24 h
+[triggers]
+crons = ["0 */6 * * *"]

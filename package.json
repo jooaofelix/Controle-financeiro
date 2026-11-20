@@ -7,7 +7,8 @@
     "marcas": "node scripts/gerar-marcas.mjs",
     "test": "node scripts/testar-planejador.mjs",
     "test:atalho": "node scripts/testar-atalho.mjs",
-    "test:push": "node scripts/testar-push.mjs"
+    "test:push": "node scripts/testar-push.mjs",
+    "test:pluggy": "node scripts/testar-pluggy.mjs"
   },
   "devDependencies": {
     "simple-icons": "13.21.0",

@@ -2,6 +2,7 @@
 import { $, fmt, fmtCurto, esc, api, CATS, cat, corCat, marcaDe, iconeMarca, iconeCategoria, iconeEmoji, mascote, toast } from '/comum.js';
 import { planejar, DIAS } from '/planejador.js';
 import { cartaoNotificacoes } from '/notificacoes.js';
+import { cartaoBancos } from '/bancos.js';
 import { situacao, resumoDividas, contasDoMes, parcelasNoCartao, inicioDe, parcelaDoMes, mesAno } from '/dividas.js';
 
 function hojeLocal() {
@@ -26,6 +27,7 @@ export async function abrirPlano(cfg) {
   render();
   renderDiario(log);
   cartaoNotificacoes(config);
+  cartaoBancos(config);
 }
 
 // Diário do Atalho: mostra o que o iPhone mandou e se deu certo (ajuda a achar falhas)

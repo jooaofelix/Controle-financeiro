@@ -3,6 +3,7 @@ import { DurableObject } from 'cloudflare:workers';
 import { paraCentavos } from './valores.js';
 import { ESTATICOS } from './estaticos.js';
 import { enviarPush } from './push.js';
+import { PLUGGY_BASE, clientePluggy, classificar, acharDuplicado, situacaoItem, nomeDaConta, categoriaDoPluggy } from './pluggy.js';
 
 const CATEGORIAS = [
   'Mercado', 'Alimentação', 'Casa', 'Transporte', 'Saúde', 'Lazer',
@@ -53,6 +54,27 @@ const SCHEMA = [
     pessoa    TEXT NOT NULL DEFAULT '',
     criado_em TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
   )`,
+  // Meu Pluggy (Open Finance): credenciais por pessoa (o segredo nunca volta para a tela)
+  `CREATE TABLE IF NOT EXISTS bancos (
+    pessoa        TEXT PRIMARY KEY,
+    client_id     TEXT NOT NULL,
+    client_secret TEXT NOT NULL,
+    itens         TEXT NOT NULL DEFAULT '[]',   -- [{id, apelido}]
+    ultimo_sync   TEXT,
+    ultimo_erro   TEXT,
+    ultimo_resumo TEXT
+  )`,
+  // Situação de cada conexão (item) do Pluggy
+  `CREATE TABLE IF NOT EXISTS pluggy_itens (
+    item_id      TEXT PRIMARY KEY,
+    pessoa       TEXT NOT NULL,
+    apelido      TEXT NOT NULL DEFAULT '',
+    status       TEXT,
+    situacao     TEXT,
+    atualizado_em TEXT,
+    contas       TEXT NOT NULL DEFAULT '[]',
+    aviso_em     TEXT
+  )`,
   // Planejador: salários, contas fixas, cartões e ajustes (dados em JSON)
   `CREATE TABLE IF NOT EXISTS plano (
     id    INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -81,10 +103,17 @@ export class Casa extends DurableObject {
   constructor(ctx, env) {
     super(ctx, env);
     for (const s of SCHEMA) ctx.storage.sql.exec(s);
+    // Migração: id da transação no banco (Open Finance), para não importar duas vezes
+    try { ctx.storage.sql.exec(`ALTER TABLE transacoes ADD COLUMN externo_id TEXT`); } catch {}
+    ctx.storage.sql.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_transacoes_externo ON transacoes(externo_id) WHERE externo_id IS NOT NULL`);
     this.db = bancoSql(ctx.storage.sql);
   }
   async fetch(req) {
     const url = new URL(req.url);
+    // Sincronização agendada (só alcançável de dentro do Worker, não pela internet)
+    if (url.pathname === '/__sincronizar') {
+      return json(await sincronizarTodos({ ...this.env, DB: this.db }));
+    }
     try {
       return await rotear(req, { ...this.env, DB: this.db }, url);
     } catch (e) {
@@ -101,6 +130,10 @@ export default {
     const url = new URL(req.url);
     if (url.pathname.startsWith('/api/')) return env.CASA.get(env.CASA.idFromName('casa')).fetch(req);
     return arquivoEstatico(url.pathname);
+  },
+  // Busca automática no Meu Pluggy (horários em [triggers] no wrangler.toml)
+  async scheduled(_evento, env, ctx) {
+    ctx.waitUntil(env.CASA.get(env.CASA.idFromName('casa')).fetch('https://interno/__sincronizar', { method: 'POST' }));
   },
 };
 
@@ -167,6 +200,18 @@ async function rotear(req, env, url) {
   }
   if (mId && m === 'DELETE') {
     await env.DB.prepare(`DELETE FROM transacoes WHERE id=?`).bind(Number(mId[1])).run();
+    return json({ ok: true });
+  }
+
+  // ---------- Bancos (Meu Pluggy / Open Finance) ----------
+  if (pathname === '/api/bancos' && m === 'GET') return json(await listarBancos(env));
+  if (pathname === '/api/bancos/sincronizar' && m === 'POST') return json(await sincronizarTodos(env, { manual: true }));
+  const mBanco = pathname.match(/^\/api\/bancos\/([^/]+)$/);
+  if (mBanco && m === 'PUT') return json(await salvarBanco(env, decodeURIComponent(mBanco[1]), await req.json().catch(() => ({}))));
+  if (mBanco && m === 'DELETE') {
+    const pessoa = decodeURIComponent(mBanco[1]);
+    await env.DB.prepare(`DELETE FROM bancos WHERE pessoa=?`).bind(pessoa).run();
+    await env.DB.prepare(`DELETE FROM pluggy_itens WHERE pessoa=?`).bind(pessoa).run();
     return json({ ok: true });
   }
 
@@ -456,6 +501,159 @@ async function atalho(req, env, corpoTxt, tipo) {
 
   await notificarLancamento(env, r);
   return mensagem;
+}
+
+// ---------- Bancos: Meu Pluggy ----------
+
+const somaDias = (iso, n) => new Date(Date.parse(iso + 'T12:00:00Z') + n * 86400000).toISOString().slice(0, 10);
+
+async function listarBancos(env) {
+  const { results: bancos } = await env.DB.prepare(`SELECT pessoa, client_id, itens, ultimo_sync, ultimo_erro, ultimo_resumo FROM bancos`).all();
+  const { results: itens } = await env.DB.prepare(`SELECT * FROM pluggy_itens`).all();
+  return pessoas(env).map((pessoa) => {
+    const b = bancos.find((x) => x.pessoa === pessoa);
+    if (!b) return { pessoa, configurado: false };
+    const lista = JSON.parse(b.itens || '[]');
+    return {
+      pessoa,
+      configurado: true,
+      clientIdFim: String(b.client_id).slice(-4),
+      itens: lista.map((i) => {
+        const r = itens.find((x) => x.item_id === i.id) || {};
+        return { id: i.id, apelido: i.apelido, status: r.status || null, situacao: r.situacao ? JSON.parse(r.situacao) : null, atualizado_em: r.atualizado_em || null, contas: JSON.parse(r.contas || '[]') };
+      }),
+      ultimo_sync: b.ultimo_sync,
+      ultimo_erro: b.ultimo_erro,
+      ultimo_resumo: b.ultimo_resumo ? JSON.parse(b.ultimo_resumo) : null,
+    };
+  });
+}
+
+async function salvarBanco(env, pessoa, b) {
+  if (!pessoas(env).includes(pessoa)) throw erro(400, 'Pessoa inválida');
+  const atual = await env.DB.prepare(`SELECT * FROM bancos WHERE pessoa=?`).bind(pessoa).first();
+  const clientId = String(b.clientId || '').trim();
+  const clientSecret = String(b.clientSecret || '').trim() || atual?.client_secret || '';
+  if (!clientId || !clientSecret) throw erro(400, 'Informe o Client ID e o Client Secret');
+  const itens = (Array.isArray(b.itens) ? b.itens : [])
+    .map((i) => ({ id: String(i.id || '').trim(), apelido: String(i.apelido || '').trim().slice(0, 30) }))
+    .filter((i) => /^[A-Za-z0-9-]{8,64}$/.test(i.id))
+    .slice(0, 5);
+  if (!itens.length) throw erro(400, 'Informe pelo menos um Item ID (copiado do Dashboard da Pluggy)');
+
+  // Testa antes de salvar: se o login falhar, nada é gravado
+  await clientePluggy({ clientId, clientSecret }, env.PLUGGY_BASE || PLUGGY_BASE)
+    .catch((e) => { throw erro(400, e.message); });
+  await env.DB.prepare(
+    `INSERT INTO bancos (pessoa, client_id, client_secret, itens) VALUES (?, ?, ?, ?)
+     ON CONFLICT(pessoa) DO UPDATE SET client_id=excluded.client_id, client_secret=excluded.client_secret, itens=excluded.itens, ultimo_erro=NULL`
+  ).bind(pessoa, clientId, clientSecret, JSON.stringify(itens)).run();
+  await env.DB.prepare(`DELETE FROM pluggy_itens WHERE pessoa=? AND item_id NOT IN (${itens.map(() => '?').join(',')})`).bind(pessoa, ...itens.map((i) => i.id)).run();
+  const resultado = await sincronizarPessoa(env, pessoa);
+  return { ok: true, resultado };
+}
+
+async function sincronizarTodos(env, { manual = false } = {}) {
+  const { results } = await env.DB.prepare(`SELECT pessoa FROM bancos`).all();
+  const saida = [];
+  for (const { pessoa } of results) saida.push({ pessoa, ...(await sincronizarPessoa(env, pessoa, { manual })) });
+  return saida;
+}
+
+async function sincronizarPessoa(env, pessoa, { manual = false } = {}) {
+  const cfg = await env.DB.prepare(`SELECT * FROM bancos WHERE pessoa=?`).bind(pessoa).first();
+  if (!cfg) return { erro: 'não configurado' };
+  const hoje = hojeSP();
+  const primeira = !cfg.ultimo_sync;
+  // Primeira vez: desde o dia 1º do mês. Depois: últimos 20 dias (o banco manda com atraso)
+  const dateFrom = primeira ? hoje.slice(0, 8) + '01' : somaDias(hoje, -20);
+  const resumo = { importados: 0, ligados: 0, ignorados: 0, erros: [] };
+  const novos = [];
+  const itens = JSON.parse(cfg.itens || '[]');
+
+  let cli;
+  try {
+    cli = await clientePluggy({ clientId: cfg.client_id, clientSecret: cfg.client_secret }, env.PLUGGY_BASE || PLUGGY_BASE);
+  } catch (e) {
+    resumo.erros.push(e.message);
+  }
+
+  for (const it of cli ? itens : []) {
+    const apelido = it.apelido || 'Banco';
+    try {
+      const item = await cli.item(it.id);
+      const sit = situacaoItem(item, hoje);
+      const contas = await cli.contas(it.id).catch(() => []);
+      const anterior = await env.DB.prepare(`SELECT aviso_em FROM pluggy_itens WHERE item_id=?`).bind(it.id).first();
+      let avisoEm = anterior?.aviso_em || null;
+      // Aviso de conexão parada ou vencendo: no máximo um por dia por banco
+      if (sit.nivel !== 'ok' && avisoEm !== hoje) {
+        await notificar(env, {
+          titulo: sit.nivel === 'erro' ? `⚠️ ${apelido} (${pessoa}) parou de atualizar` : `🔔 ${apelido} (${pessoa}): ${sit.texto.toLowerCase()}`,
+          corpo: 'Toque para renovar no Meu Pluggy e aprovar no app do banco. Leva uns 30 segundos.',
+          tag: `banco-${it.id}`,
+          url: 'https://meu.pluggy.ai',
+        });
+        avisoEm = hoje;
+      }
+      await env.DB.prepare(
+        `INSERT INTO pluggy_itens (item_id, pessoa, apelido, status, situacao, atualizado_em, contas, aviso_em) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(item_id) DO UPDATE SET pessoa=excluded.pessoa, apelido=excluded.apelido, status=excluded.status, situacao=excluded.situacao,
+           atualizado_em=excluded.atualizado_em, contas=excluded.contas, aviso_em=excluded.aviso_em`
+      ).bind(it.id, pessoa, apelido, sit.status, JSON.stringify(sit), item.lastUpdatedAt || null,
+        JSON.stringify(contas.map((c) => ({ nome: nomeDaConta(c, apelido), tipo: c.type === 'CREDIT' ? 'Cartão' : 'Conta', final: String(c.number || '').replace(/\D/g, '').slice(-4) }))), avisoEm).run();
+      if (sit.nivel === 'erro') continue;
+
+      for (const conta of contas) {
+        const nomeConta = nomeDaConta(conta, apelido);
+        for (const t of await cli.transacoes(conta.id, { dateFrom })) {
+          if (!t.id) continue;
+          const ja = await env.DB.prepare(`SELECT id FROM transacoes WHERE externo_id=?`).bind(String(t.id)).first();
+          if (ja) continue;
+          const c = classificar(t, conta);
+          if (!c.importar) { resumo.ignorados++; continue; }
+          const nova = { tipo: c.tipo, valor: c.valor, data: c.data, conta: nomeConta };
+          const { results: perto } = await env.DB.prepare(
+            `SELECT id, tipo, valor, data, conta, externo_id FROM transacoes WHERE externo_id IS NULL AND data BETWEEN ? AND ?`
+          ).bind(somaDias(c.data, -3), somaDias(c.data, 3)).all();
+          const dup = acharDuplicado(nova, perto);
+          if (dup) {
+            await env.DB.prepare(`UPDATE transacoes SET externo_id=? WHERE id=?`).bind(String(t.id), dup.id).run();
+            resumo.ligados++;
+            continue;
+          }
+          let categoria = categoriaDoPluggy(c.categoriaPluggy) || categorizar(c.descricao);
+          if (c.tipo === 'receita' && categoria === 'A classificar') categoria = 'Outros';
+          const r = await env.DB.prepare(
+            `INSERT INTO transacoes (data, valor, tipo, categoria, pessoa, conta, descricao, origem, externo_id)
+             VALUES (?, ?, ?, ?, ?, ?, ?, 'banco', ?) RETURNING *`
+          ).bind(c.data, c.valor, c.tipo, categoria, pessoa, nomeConta, c.descricao, String(t.id)).first();
+          resumo.importados++;
+          novos.push(r);
+        }
+      }
+    } catch (e) {
+      resumo.erros.push(`${apelido}: ${e.message}`);
+    }
+  }
+
+  await env.DB.prepare(`UPDATE bancos SET ultimo_sync=?, ultimo_erro=?, ultimo_resumo=? WHERE pessoa=?`)
+    .bind(new Date().toISOString(), resumo.erros.join(' | ') || null, JSON.stringify(resumo), pessoa).run();
+
+  // Notificações: na primeira vez, um resumo só; depois, cada lançamento (até 5) + resumo do resto
+  if (primeira && resumo.importados + resumo.ligados > 0) {
+    await notificar(env, {
+      titulo: `🏦 Bancos de ${pessoa} conectados!`,
+      corpo: `${resumo.importados} ${resumo.importados === 1 ? 'lançamento importado' : 'lançamentos importados'}${resumo.ligados ? ` e ${resumo.ligados} ${resumo.ligados === 1 ? 'que já estava no app foi reconhecido' : 'que já estavam no app foram reconhecidos'}` : ''}.`,
+      tag: `banco-primeira-${pessoa}`,
+    });
+  } else if (!primeira) {
+    for (const r of novos.slice(0, 5)) await notificarLancamento(env, r);
+    if (novos.length > 5) {
+      await notificar(env, { titulo: `🏦 +${novos.length - 5} lançamentos de ${pessoa}`, corpo: 'Vieram do banco agora. Abra o pagaAI para ver.', tag: `banco-lote-${pessoa}` });
+    }
+  }
+  return { ...resumo, primeira, manual };
 }
 
 // ---------- Notificações ----------
