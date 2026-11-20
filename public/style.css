@@ -595,3 +595,24 @@ dialog::backdrop { background: rgb(10 20 15 / 0.45); }
   color: var(--sutil); font: inherit; font-size: 13.5px; font-weight: 600; cursor: pointer;
 }
 .btn-sair { display: block; width: 100%; margin: 6px 0 24px; color: var(--negativo); }
+
+/* ---------- Parceiro do rolê ---------- */
+.role { position: relative; overflow: visible; }
+.role .role-mascote { position: absolute; width: 70px; right: 12px; top: -26px; }
+.role .card-titulo { padding-right: 76px; }
+.role-atalhos { margin: 4px 0 10px; }
+.role-atalhos span { font-size: 12.5px; padding: 6px 4px; }
+.role-datas { display: flex; gap: 10px; align-items: center; font-size: 13px; color: var(--sutil); margin-bottom: 12px; }
+.role-datas label { display: flex; align-items: center; gap: 6px; flex: 1; min-width: 0; }
+.role-datas input { flex: 1; min-width: 0; border: 0; border-radius: 10px; padding: 7px 8px; background: var(--bg); color: var(--texto); font: inherit; font-size: 13.5px; }
+.role-valor { display: grid; gap: 2px; padding: 12px 14px; border-radius: 16px; background: var(--menta); color: var(--menta-tx); }
+.role-valor b { font-size: 28px; font-weight: 800; letter-spacing: -0.5px; font-variant-numeric: tabular-nums; }
+.role-valor span { font-size: 13px; font-weight: 600; }
+.role-valor.ruim { background: color-mix(in srgb, var(--negativo) 14%, var(--card)); color: var(--negativo); }
+.role-linha { margin: 8px 2px 0; font-size: 13.5px; line-height: 1.4; }
+.role-dica { margin: 4px 2px 0; font-size: 13.5px; line-height: 1.4; }
+.role-como { margin-top: 10px; font-size: 13px; color: var(--sutil); }
+.role-como summary { cursor: pointer; font-weight: 600; }
+.role-como p { margin: 6px 0; line-height: 1.4; }
+.role-reserva { display: flex; align-items: center; gap: 6px; margin-top: 6px; }
+.role-reserva input { width: 90px; border: 0; border-radius: 8px; padding: 6px 8px; background: var(--bg); color: var(--texto); font: inherit; }

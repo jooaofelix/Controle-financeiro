@@ -5,6 +5,7 @@ import { contasDoMes, parcelaDoMes } from '/dividas.js';
 import { sugerirVinculo, situacaoMes, itensPagaveis, nomeItem } from '/vinculos.js';
 import { registrarSW, bannerInicio } from '/notificacoes.js';
 import { abrirPlano } from '/plano.js';
+import { parceiroDoRole, somaDias } from '/role.js';
 
 const MARCA_CONTA = { Nubank: 'nubank', Inter: 'inter' };
 
@@ -17,6 +18,8 @@ let pagamentosPlano = []; // gastos já vinculados a contas previstas (meses pr�
 let vinculoManual = false; // a pessoa escolheu o vínculo no formulário (não sobrescrever com sugestão)
 let filtroCat = null;
 let filtroTipo = null;
+let saldosContas = [];
+let gastoVariavelMes = 0;
 let verPagas = false; // Contas do mês: mostrar também as já pagas // 'receita' | 'transferencia' — tocar em Entradas / Entre contas
 let editandoId = null;
 
@@ -75,11 +78,15 @@ async function carregar() {
   // Período fechado do mês: tudo com data de 01 até o último dia conta neste mês (inclusive salário)
   const ultimo = new Date(+mes.slice(0, 4), +mes.slice(5, 7), 0).getDate();
   $('#hero-rotulo').innerHTML = `Gasto em ${nomeMes(mes)} <small class="hero-periodo">01/${mes.slice(5, 7)} a ${ultimo}/${mes.slice(5, 7)}</small>`;
-  const [atual, anterior, plano] = await Promise.all([
+  const [atual, anterior, plano, sal] = await Promise.all([
     api('/api/transacoes?mes=' + mes),
     api('/api/transacoes?mes=' + mesDeslocado(mes, -1)).catch(() => []),
     api('/api/plano').catch(() => ({ itens: [] })),
+    api('/api/saldos').catch(() => []),
   ]);
+  saldosContas = sal;
+  const ajustes = (plano.itens || []).find((i) => i.tipo === 'ajustes') || {};
+  gastoVariavelMes = ajustes.gastoVariavel ?? plano.gastoVariavel?.porMes ?? 0;
   transacoes = atual;
   carregarRepetidos();
   itensPlano = plano.itens;
@@ -151,6 +158,7 @@ function render() {
   aviso.onclick = () => pend[0] && abrirForm(pend[0]);
 
   renderProximas();
+  renderRole();
   renderCategorias(gastos, totalG);
   renderComoPagaram(gastos, totalG);
   renderLista();
@@ -441,6 +449,81 @@ function atualizarTipoForm() {
   $('#chips-categoria').previousElementSibling.hidden = entre;
   if (entre) { $('#campo-vinculo').hidden = true; $('#sel-vinculo').value = ''; }
   else $('#campo-vinculo').hidden = !itensPagaveis(itensPlano).length;
+}
+
+// ---------- Parceiro do rolê ----------
+const br = (iso) => iso.slice(8, 10) + '/' + iso.slice(5, 7);
+function periodoRole(preset, hoje) {
+  if (preset === 'fds') {
+    const sem = new Date(hoje + 'T12:00:00Z').getUTCDay(); // 0 dom … 6 sáb
+    if (sem === 0) return [hoje, hoje];
+    const sab = somaDias(hoje, 6 - sem);
+    return [sem === 6 ? hoje : sexOuSab(hoje, sem, sab), somaDias(sab, 1)];
+  }
+  if (preset === 'salario') {
+    const r = calcularRole(hoje, hoje);
+    return [hoje, r?.limite || hoje];
+  }
+  return [lsGet('role_de') || hoje, lsGet('role_ate') || somaDias(hoje, 7)];
+}
+// sexta à noite já é rolê: a partir de sexta conta sexta, sábado e domingo
+function sexOuSab(hoje, sem, sab) { return sem === 5 ? hoje : sab; }
+function calcularRole(de, ate) {
+  if (!saldosContas.length) return null;
+  const reserva = Math.round((parseFloat(String(lsGet('role_reserva') || '0').replace(/\./g, '').replace(',', '.')) || 0) * 100);
+  return parceiroDoRole({
+    saldoAgora: saldosContas.reduce((t, x) => t + x.valor, 0), hojeISO: hojeLocal(), de, ate,
+    itens: itensPlano, pagamentos: pagamentosPlano, gastoVariavelMensal: gastoVariavelMes, reserva,
+  });
+}
+function renderRole(presetNovo) {
+  const card = $('#card-role');
+  const hoje = hojeLocal();
+  card.hidden = mes !== hoje.slice(0, 7);
+  if (card.hidden) return;
+  const res = $('#role-resultado');
+  if (!saldosContas.length) {
+    $('#role-mascote').innerHTML = mascote('pensando', 'role-mascote');
+    $('#role-atalhos').hidden = true; card.querySelector('.role-datas').hidden = true;
+    res.innerHTML = '<p class="sutil role-dica">Para saber quanto dá para gastar eu preciso do saldo das contas. Conecte o banco ou informe o saldo na aba 🏦 Bancos.</p>';
+    return;
+  }
+  $('#role-atalhos').hidden = false; card.querySelector('.role-datas').hidden = false;
+  const preset = presetNovo || lsGet('role_preset') || 'fds';
+  marcar('rolep', preset);
+  let [de, ate] = periodoRole(preset, hoje);
+  if (presetNovo === undefined && preset === 'livre') { de = $('#role-de').value || de; ate = $('#role-ate').value || ate; }
+  if (de < hoje) de = hoje;
+  if (ate < de) ate = de;
+  $('#role-de').value = de; $('#role-ate').value = ate; $('#role-de').min = hoje; $('#role-ate').min = de;
+  const r = calcularRole(de, ate);
+  const ok = r.livre > 0;
+  $('#role-mascote').innerHTML = mascote(ok ? 'comemora' : 'preocupado', 'role-mascote');
+  const periodo = r.dias === 1 ? `em ${de === hoje ? 'hoje' : br(de)}` : `de ${br(de)} a ${br(ate)} (${r.dias} dias)`;
+  const separado = r.contas.reduce((t, c) => t - c.valor, 0);
+  res.innerHTML = ok ? `
+    <div class="role-valor"><b>${fmt(r.livre)}</b><span>livres para gastar ${periodo}</span></div>
+    ${r.dias > 1 ? `<p class="role-linha">≈ <b>${fmt(r.porDia)}</b> por dia</p>` : ''}
+    ${r.diaADiaNormal > 0 ? `<p class="role-linha">${r.extra > 0
+      ? `Tirando o dia a dia normal (~${fmt(r.diaADiaNormal)}), sobram <b>${fmt(r.extra)}</b> só para o rolê 🎉`
+      : `Dá só para o dia a dia normal (~${fmt(r.diaADiaNormal)}). Rolê extra fica apertado 😬`}</p>` : ''}
+    <details class="role-como"><summary>Como calculei</summary>
+      <p>Saldo agora: <b>${fmt(saldosContas.reduce((t, x) => t + x.valor, 0))}</b>${r.salarios.length ? ` · entra até ${br(r.limite)}: ${r.salarios.map((s) => `${esc(s.nome)} ${fmt(s.valor)} (${br(s.data)})`).join(', ')}` : ''}</p>
+      <p>Separei <b>${fmt(separado)}</b> para as contas até ${br(r.limite)}${r.salario ? `, véspera do próximo salário (${br(r.salario.data)})` : ''}${r.contas.length ? ': ' + r.contas.map((c) => `${esc(c.nome)} ${fmt(-c.valor)} (${c.tipo === 'atrasada' ? 'atrasada' : br(c.data)})`).join(', ') : ''}.</p>
+      <p>Fora do período conto o dia a dia normal (${fmt(Math.round(gastoVariavelMes / 30))}/dia). No período, o valor livre já inclui mercado, iFood, passeio…</p>
+      <label class="role-reserva">Guardar sempre uma reserva de R$ <input id="role-reserva" inputmode="decimal" placeholder="0,00" value="${esc(lsGet('role_reserva') || '')}"></label>
+    </details>`
+  : `<div class="role-valor ruim"><b>${fmt(r.livre)}</b><span>${periodo}: não tem folga 😬</span></div>
+    <p class="role-linha">Com as contas até ${br(r.limite)}${r.salario ? ` (antes do salário de ${br(r.salario.data)})` : ''}, o saldo ${r.aperto ? `aperta no dia ${br(r.aperto)}` : 'não fecha'}. Melhor segurar os gastos.</p>`;
+  const inp = $('#role-reserva');
+  if (inp) inp.onchange = () => { lsSet('role_reserva', inp.value.trim()); renderRole(); };
+}
+$('#role-atalhos').addEventListener('change', (e) => { lsSet('role_preset', e.target.value); renderRole(e.target.value); });
+for (const id of ['#role-de', '#role-ate']) {
+  $(id).addEventListener('change', () => {
+    lsSet('role_preset', 'livre'); lsSet('role_de', $('#role-de').value); lsSet('role_ate', $('#role-ate').value);
+    renderRole();
+  });
 }
 
 // ---------- Repetidos ----------

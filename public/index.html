@@ -60,6 +60,22 @@
     <button id="aviso-repetidos" class="aviso" hidden></button>
     <div id="banner-notif" class="aviso banner-notif" hidden></div>
 
+    <!-- Parceiro do rolê: quanto dá para gastar de um dia até outro -->
+    <section id="card-role" class="card role" hidden>
+      <div id="role-mascote"></div>
+      <div class="card-titulo"><h2>🎉 Parceiro do rolê</h2></div>
+      <div class="seg seg-mini role-atalhos" id="role-atalhos">
+        <label><input type="radio" name="rolep" value="fds"><span>Fim de semana</span></label>
+        <label><input type="radio" name="rolep" value="salario"><span>Até o salário</span></label>
+        <label><input type="radio" name="rolep" value="livre"><span>Escolher</span></label>
+      </div>
+      <div class="role-datas">
+        <label>De <input type="date" id="role-de"></label>
+        <label>até <input type="date" id="role-ate"></label>
+      </div>
+      <div id="role-resultado"></div>
+    </section>
+
     <!-- Vence em breve (do planejador) -->
     <section id="proximas" class="card proximas" hidden>
       <img class="mascote proximas-mascote" src="/mascote/correndo.webp" alt="" aria-hidden="true">
