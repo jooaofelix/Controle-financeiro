@@ -342,13 +342,19 @@ function renderSaldos() {
   const total = saldos.reduce((t, x) => t + x.valor, 0);
   $('#saldos-total').textContent = saldos.length ? fmt(total) : '';
   const br = (iso) => iso ? new Date(iso.length > 10 ? iso : iso + 'T12:00:00').toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' }) : '';
-  const linhas = saldos.map((x) => `
+  const linhas = saldos.map((x) => x.origem === 'colchao' ? `
+    <div class="saldo-linha">
+      <span class="avatar-mini">🛏️</span>
+      <span class="saldo-txt"><b>Guardado no colchão</b><small>continua na conta, mas não é para gastar</small></span>
+      <b>${fmt(x.valor)}</b>
+    </div>` : `
     <div class="saldo-linha">
       <span class="avatar-mini">${esc(x.pessoa.charAt(0))}</span>
       <span class="saldo-txt"><b>${esc(x.pessoa)} · ${esc(x.conta)}</b>
         <small>${x.origem === 'banco' ? `🏦 do banco · ${br(x.atualizado)}` : `✏️ informado em ${br(x.atualizado)} · <span class="link-acao" data-saldo-editar="${x.id}">atualizar</span>`}</small></span>
       <b class="${x.valor < 0 ? 'negativo' : ''}">${fmt(x.valor)}</b>
     </div>`).join('');
+  if (saldos.some((x) => x.origem === 'colchao')) $('#saldos-total').innerHTML = `${fmt(total)} <small class="sutil">livre</small>`;
   const semSaldo = config.pessoas.filter((p) => !saldos.some((x) => x.pessoa === p));
   const informar = semSaldo.map((p) => `<button class="btn-sec btn-largo" data-saldo-novo="${esc(p)}">✏️ Informar saldo de ${esc(p)}</button>`).join('');
   el.innerHTML = (linhas || '<p class="vazio">Conecte os bancos (🏦 Bancos, mais abaixo) ou informe o saldo de cada um para ver a previsão real do mês.</p>') +

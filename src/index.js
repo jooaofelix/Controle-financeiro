@@ -90,6 +90,24 @@ const SCHEMA = [
   )`,
   // Lançamentos do banco que a pessoa apagou: a sincronização não traz de volta
   `CREATE TABLE IF NOT EXISTS externos_apagados (externo_id TEXT PRIMARY KEY)`,
+  // Colchão: o "cofrinho" da casa. Cada colchão é um objetivo; o saldo é a soma dos movimentos
+  `CREATE TABLE IF NOT EXISTS colchoes (
+    id        INTEGER PRIMARY KEY AUTOINCREMENT,
+    nome      TEXT NOT NULL,
+    emoji     TEXT NOT NULL DEFAULT '🛏️',
+    meta      INTEGER,                 -- centavos (opcional)
+    data_meta TEXT,                    -- 'AAAA-MM-DD' (opcional)
+    onde      TEXT NOT NULL DEFAULT 'conta', -- 'conta' (separado no app) | 'banco' (numa caixinha do banco)
+    criado_em TEXT NOT NULL DEFAULT (datetime('now'))
+  )`,
+  `CREATE TABLE IF NOT EXISTS colchao_mov (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    colchao_id INTEGER NOT NULL,
+    valor      INTEGER NOT NULL,       -- + guardou, - tirou (centavos)
+    data       TEXT NOT NULL,
+    pessoa     TEXT NOT NULL DEFAULT '',
+    nota       TEXT NOT NULL DEFAULT ''
+  )`,
   // Pares que a pessoa disse "não é repetido" ("idMenor-idMaior")
   `CREATE TABLE IF NOT EXISTS repetidos_ignorados (par TEXT PRIMARY KEY)`,
   // Planejador: salários, contas fixas, cartões e ajustes (dados em JSON)
@@ -264,6 +282,34 @@ async function rotear(req, env, url) {
 
   // ---------- Saldo agora nas contas ----------
   if (pathname === '/api/saldos' && m === 'GET') return json(await saldosAtuais(env));
+  // Colchão (cofrinho)
+  if (pathname === '/api/colchoes' && m === 'GET') return json(await listarColchoes(env));
+  if (pathname === '/api/colchoes' && m === 'POST') {
+    const c = validarColchao(await req.json().catch(() => ({})));
+    const r = await env.DB.prepare(`INSERT INTO colchoes (nome, emoji, meta, data_meta, onde) VALUES (?, ?, ?, ?, ?) RETURNING *`)
+      .bind(c.nome, c.emoji, c.meta, c.data_meta, c.onde).first();
+    return json(r, 201);
+  }
+  const mColchao = pathname.match(/^\/api\/colchoes\/(\d+)$/);
+  if (mColchao && m === 'PUT') {
+    const c = validarColchao(await req.json().catch(() => ({})));
+    await env.DB.prepare(`UPDATE colchoes SET nome=?, emoji=?, meta=?, data_meta=?, onde=? WHERE id=?`)
+      .bind(c.nome, c.emoji, c.meta, c.data_meta, c.onde, Number(mColchao[1])).run();
+    return json({ ok: true });
+  }
+  if (mColchao && m === 'DELETE') {
+    await env.DB.prepare(`DELETE FROM colchao_mov WHERE colchao_id=?`).bind(Number(mColchao[1])).run();
+    await env.DB.prepare(`DELETE FROM colchoes WHERE id=?`).bind(Number(mColchao[1])).run();
+    return json({ ok: true });
+  }
+  const mMov = pathname.match(/^\/api\/colchoes\/(\d+)\/mov$/);
+  if (mMov && m === 'POST') return json(await moverColchao(env, Number(mMov[1]), await req.json().catch(() => ({}))), 201);
+  const mMovDel = pathname.match(/^\/api\/colchoes\/mov\/(\d+)$/);
+  if (mMovDel && m === 'DELETE') {
+    await env.DB.prepare(`DELETE FROM colchao_mov WHERE id=?`).bind(Number(mMovDel[1])).run();
+    return json({ ok: true });
+  }
+
   // Lançamentos que parecem repetidos (revisão)
   if (pathname === '/api/repetidos' && m === 'GET') return json(await listarRepetidos(env));
   if (pathname === '/api/repetidos/resolver' && m === 'POST') return json(await resolverRepetido(env, await req.json().catch(() => ({}))));
@@ -623,6 +669,13 @@ async function saldosAtuais(env) {
     if (lista.some((x) => x.pessoa === d.pessoa && x.conta.toLowerCase() === String(d.conta).toLowerCase())) continue;
     lista.push({ id: r.id, pessoa: d.pessoa, conta: d.conta, valor: d.valor, origem: 'manual', atualizado: d.data });
   }
+  // O que está no colchão "só separado no app" continua na conta, mas não é para gastar
+  if (lista.length) {
+    const { total } = await env.DB.prepare(
+      `SELECT COALESCE(SUM(m.valor), 0) AS total FROM colchao_mov m JOIN colchoes c ON c.id = m.colchao_id WHERE c.onde = 'conta'`
+    ).first();
+    if (total > 0) lista.push({ pessoa: 'Casa', conta: 'Colchão', valor: -total, origem: 'colchao' });
+  }
   return lista;
 }
 
@@ -936,6 +989,48 @@ async function sincronizarPessoa(env, pessoa, { manual = false } = {}) {
     }
   }
   return { ...resumo, primeira, manual };
+}
+
+// ---------- Colchão ----------
+
+function validarColchao(b) {
+  const nome = String(b?.nome || '').trim().slice(0, 40);
+  if (!nome) throw erro(400, 'Dê um nome ao colchão (ex.: Viagem, Reserva)');
+  const meta = b.meta ? paraCentavos(b.meta) : null;
+  const data_meta = /^\d{4}-\d{2}-\d{2}$/.test(b.data_meta || '') ? b.data_meta : null;
+  return { nome, emoji: String(b.emoji || '🛏️').slice(0, 8), meta: meta || null, data_meta, onde: b.onde === 'banco' ? 'banco' : 'conta' };
+}
+
+async function listarColchoes(env) {
+  const { results: cs } = await env.DB.prepare(`SELECT * FROM colchoes ORDER BY id`).all();
+  const { results: movs } = await env.DB.prepare(`SELECT * FROM colchao_mov ORDER BY data DESC, id DESC`).all();
+  return cs.map((c) => {
+    const meus = movs.filter((m) => m.colchao_id === c.id);
+    return { ...c, saldo: meus.reduce((t, m) => t + m.valor, 0), movs: meus.slice(0, 15) };
+  });
+}
+
+async function moverColchao(env, id, b) {
+  const c = await env.DB.prepare(`SELECT * FROM colchoes WHERE id=?`).bind(id).first();
+  if (!c) throw erro(404, 'Colchão não encontrado');
+  const valor = paraCentavos(b.valor);
+  if (!valor) throw erro(400, 'Informe um valor maior que zero');
+  const tirar = b.tipo === 'tirar';
+  if (tirar) {
+    const { saldo } = await env.DB.prepare(`SELECT COALESCE(SUM(valor), 0) AS saldo FROM colchao_mov WHERE colchao_id=?`).bind(id).first();
+    if (valor > saldo) throw erro(400, `Só tem ${reais(saldo)} nesse colchão`);
+  }
+  const lista = pessoas(env);
+  const pessoa = lista.includes(b.pessoa) ? b.pessoa : '';
+  const r = await env.DB.prepare(`INSERT INTO colchao_mov (colchao_id, valor, data, pessoa, nota) VALUES (?, ?, ?, ?, ?) RETURNING *`)
+    .bind(id, tirar ? -valor : valor, hojeSP(), pessoa, String(b.nota || '').trim().slice(0, 80)).first();
+  const { saldo } = await env.DB.prepare(`SELECT COALESCE(SUM(valor), 0) AS saldo FROM colchao_mov WHERE colchao_id=?`).bind(id).first();
+  await notificar(env, {
+    titulo: tirar ? `🛏️ ${pessoa || 'Alguém'} tirou ${reais(valor)} do colchão` : `🛏️ ${pessoa || 'Alguém'} guardou ${reais(valor)} no colchão`,
+    corpo: `${c.emoji} ${c.nome}: ${reais(saldo)}${c.meta ? ` de ${reais(c.meta)}` : ''}${r.nota ? `\n${r.nota}` : ''}`,
+    tag: `colchao-${id}`,
+  }).catch(() => {});
+  return { ...r, saldo };
 }
 
 // ---------- Repetidos ----------

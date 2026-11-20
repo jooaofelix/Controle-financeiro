@@ -12,7 +12,8 @@
     "test:vinculos": "node scripts/testar-vinculos.mjs",
     "test:projecao": "node scripts/testar-projecao.mjs",
     "test:diasuteis": "node scripts/testar-diasuteis.mjs",
-    "test:role": "node scripts/testar-role.mjs"
+    "test:role": "node scripts/testar-role.mjs",
+    "test:colchao": "node scripts/testar-colchao.mjs"
   },
   "devDependencies": {
     "simple-icons": "13.21.0",

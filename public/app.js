@@ -6,6 +6,7 @@ import { sugerirVinculo, situacaoMes, itensPagaveis, nomeItem } from '/vinculos.
 import { registrarSW, bannerInicio } from '/notificacoes.js';
 import { abrirPlano } from '/plano.js';
 import { parceiroDoRole, somaDias } from '/role.js';
+import { carregarColchao, iniciarColchao } from '/colchao-ui.js';
 
 const MARCA_CONTA = { Nubank: 'nubank', Inter: 'inter' };
 
@@ -54,6 +55,7 @@ async function iniciar() {
   $('#tela-login').hidden = true;
   $('#tela-app').hidden = false;
   montarFormulario();
+  iniciarColchao();
   await carregar();
   await registrarSW();
   bannerInicio(() => {
@@ -89,6 +91,8 @@ async function carregar() {
   gastoVariavelMes = ajustes.gastoVariavel ?? plano.gastoVariavel?.porMes ?? 0;
   transacoes = atual;
   carregarRepetidos();
+  // guardar/tirar do colchão muda o saldo livre: recarrega o Início
+  carregarColchao(config, () => carregar());
   itensPlano = plano.itens;
   pagamentosPlano = plano.pagamentos || [];
   totalMesAnterior = soma(anterior.filter((t) => t.tipo === 'despesa'));

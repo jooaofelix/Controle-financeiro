@@ -60,6 +60,9 @@
     <button id="aviso-repetidos" class="aviso" hidden></button>
     <div id="banner-notif" class="aviso banner-notif" hidden></div>
 
+    <!-- Colchão (cofrinho) -->
+    <button type="button" id="card-colchao" class="card colchao-mini" hidden></button>
+
     <!-- Parceiro do rolê: quanto dá para gastar de um dia até outro -->
     <section id="card-role" class="card role" hidden>
       <div id="role-mascote"></div>
@@ -299,6 +302,58 @@
         <button type="button" id="rep-todos" class="btn-primario">Apagar todas as cópias</button>
       </div>
     </div>
+  </dialog>
+
+  <!-- Colchão -->
+  <dialog id="dlg-colchao">
+    <div class="folha">
+      <div class="puxador"></div>
+      <div id="colchao-topo"></div>
+      <div id="colchao-lista"></div>
+      <div class="acoes">
+        <button type="button" id="colchao-fechar" class="btn-sec">Fechar</button>
+        <button type="button" id="colchao-novo" class="btn-primario">+ Novo colchão</button>
+      </div>
+    </div>
+  </dialog>
+  <dialog id="dlg-mov">
+    <form id="form-mov" class="folha" method="dialog">
+      <div class="puxador"></div>
+      <h3 id="mov-titulo" class="mov-titulo"></h3>
+      <p id="mov-sub" class="sutil mov-sub"></p>
+      <label class="campo-valor"><span>R$</span><input name="valor" inputmode="decimal" placeholder="0,00" autocomplete="off" required></label>
+      <span class="rotulo">Quem</span>
+      <div class="seg" id="mov-pessoas"></div>
+      <input name="nota" class="campo-nota" placeholder="Anotação (opcional) — ex.: 13º, sobrou do mês" maxlength="80" autocomplete="off">
+      <p id="mov-erro" class="erro" hidden></p>
+      <div class="acoes">
+        <button type="button" id="mov-cancelar" class="btn-sec">Cancelar</button>
+        <button type="submit" id="mov-ok" class="btn-primario">Guardar</button>
+      </div>
+    </form>
+  </dialog>
+  <dialog id="dlg-colchao-ed">
+    <form id="form-colchao" class="folha" method="dialog">
+      <div class="puxador"></div>
+      <h3 id="ed-titulo" class="mov-titulo"></h3>
+      <label class="campo"><span>Nome</span><input name="nome" placeholder="Ex.: Viagem, Reserva, Carro novo" maxlength="40" required autocomplete="off"></label>
+      <span class="rotulo">Ícone</span>
+      <div class="chips ed-emojis" id="ed-emojis"></div>
+      <label class="campo"><span>Meta (opcional)</span><input name="meta" inputmode="decimal" placeholder="0,00" autocomplete="off"></label>
+      <label class="campo"><span>Até quando (opcional)</span><input name="data_meta" type="date"></label>
+      <label class="campo"><span>Onde fica o dinheiro</span>
+        <select name="onde">
+          <option value="conta">Continua na conta (só separado no app)</option>
+          <option value="banco">Numa caixinha/poupança do banco</option>
+        </select></label>
+      <p class="dica">“Separado no app”: o dinheiro fica na conta, mas o pagaAI tira do saldo livre (Parceiro do rolê e previsão). Na caixinha do banco ele já não aparece no saldo.</p>
+      <p id="ed-erro" class="erro" hidden></p>
+      <div class="acoes">
+        <button type="button" id="ed-excluir" class="btn-perigo" hidden>Apagar</button>
+        <button type="button" id="ed-cancelar" class="btn-sec">Cancelar</button>
+        <button type="submit" class="btn-primario">Salvar</button>
+      </div>
+    </form>
   </dialog>
 
   <!-- Editor do planejador -->
