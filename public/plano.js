@@ -487,6 +487,16 @@ $('#plano-excluir').onclick = async () => {
 };
 
 document.querySelectorAll('[data-novo]').forEach((b) => { b.onclick = () => abrirEditor(b.dataset.novo); });
+// Sub-abas do Planejar: Mês / Contas / Dívidas
+function mostrarSubaba(v) {
+  document.querySelectorAll('#plano-conteudo [data-sub]').forEach((d) => { d.hidden = d.dataset.sub !== v; });
+  const r = [...document.getElementsByName('planoaba')].find((i) => i.value === v);
+  if (r) r.checked = true;
+  try { localStorage.setItem('cf_planoaba', v); } catch {}
+}
+$('#plano-abas').addEventListener('change', (e) => mostrarSubaba(e.target.value));
+try { mostrarSubaba(localStorage.getItem('cf_planoaba') || 'mes'); } catch { mostrarSubaba('mes'); }
+
 $('#btn-ajustes').onclick = () => abrirEditor('ajustes', itens.find((i) => i.tipo === 'ajustes'));
 document.querySelectorAll('#cal-modo input').forEach((i) => {
   i.onchange = () => { verSugestao = i.value === 'sug'; render(); };

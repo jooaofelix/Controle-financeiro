@@ -16,7 +16,8 @@ let itensPlano = [];
 let pagamentosPlano = []; // gastos já vinculados a contas previstas (meses próximos)
 let vinculoManual = false; // a pessoa escolheu o vínculo no formulário (não sobrescrever com sugestão)
 let filtroCat = null;
-let filtroTipo = null; // 'receita' | 'transferencia' — tocar em Entradas / Entre contas
+let filtroTipo = null;
+let verPagas = false; // Contas do mês: mostrar também as já pagas // 'receita' | 'transferencia' — tocar em Entradas / Entre contas
 let editandoId = null;
 
 // ---------- Login ----------
@@ -53,7 +54,7 @@ async function iniciar() {
   await carregar();
   await registrarSW();
   bannerInicio(() => {
-    mostrarAba('plano');
+    mostrarAba('mais');
     setTimeout(() => $('#card-notif')?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 400);
   });
 }
@@ -157,9 +158,11 @@ function render() {
 
 // Gastos do mês por forma de pagamento; crédito separado por cartão
 function renderComoPagaram(gastos, totalG) {
-  const sec = $('#como-pagaram');
-  sec.hidden = !gastos.length;
-  if (!gastos.length) return;
+  if (!gastos.length) {
+    $('#como-pagaram-sub').textContent = '';
+    $('#como-pagaram-lista').innerHTML = '<p class="vazio">Nenhum gasto neste mês.</p>';
+    return;
+  }
   const grupos = {};
   for (const t of gastos) {
     const k = t.meio || '';
@@ -203,9 +206,16 @@ function renderProximas() {
   const seguinte = situacaoMes(pagaveisNoMes(proxMes(ym)), pagamentosPlano, proxMes(ym), hojeISO)
     .filter((c) => c.estado !== 'paga' && c.diasPara <= 7).map((c) => ({ ...c, mes: proxMes(ym) }));
   const ordem = { atrasada: 0, pendente: 1, paga: 2 };
-  const lista = [...doMes, ...seguinte].sort((x, y) => ordem[x.estado] - ordem[y.estado] || x.diasPara - y.diasPara);
-  card.hidden = !lista.length;
+  const todas = [...doMes, ...seguinte].sort((x, y) => ordem[x.estado] - ordem[y.estado] || x.diasPara - y.diasPara);
+  card.hidden = !todas.length;
   if (card.hidden) return;
+  // as já pagas ficam recolhidas (toque em "ver" para abrir)
+  const nPagas = todas.filter((c) => c.estado === 'paga').length;
+  const lista = verPagas ? todas : todas.filter((c) => c.estado !== 'paga');
+  const bPagas = $('#proximas-pagas');
+  bPagas.hidden = !nPagas;
+  bPagas.textContent = verPagas ? 'Esconder as pagas ▴' : `✓ ${nPagas} ${nPagas === 1 ? 'paga' : 'pagas'} · ver ▾`;
+  bPagas.onclick = () => { verPagas = !verPagas; renderProximas(); };
 
   const pagas = doMes.filter((c) => c.estado === 'paga').length;
   const falta = doMes.filter((c) => c.estado !== 'paga').reduce((s, c) => s + c.previsto, 0);
@@ -550,12 +560,28 @@ function lsSet(k, v) { try { localStorage.setItem('cf_' + k, v); } catch {} }
 const abas = document.querySelectorAll('[data-aba]');
 abas.forEach((b) => { b.onclick = () => mostrarAba(b.dataset.aba); });
 function mostrarAba(aba) {
-  $('#pagina-inicio').hidden = aba !== 'inicio';
-  $('#pagina-plano').hidden = aba !== 'plano';
+  for (const p of ['inicio', 'plano', 'bancos', 'mais']) $('#pagina-' + p).hidden = aba !== p;
   abas.forEach((b) => b.classList.toggle('ativa', b.dataset.aba === aba));
   window.scrollTo(0, 0);
-  if (aba === 'plano') abrirPlano(config).catch(() => {});
-  else carregar();
+  lsSet('aba', aba);
+  if (aba === 'inicio') carregar();
+  else abrirPlano(config).catch(() => {});
 }
+
+// Início: "Para onde foi" e "Como pagaram" em abas no mesmo cartão
+function mostrarVisao(v) {
+  $('#visao-cat').hidden = v !== 'cat';
+  $('#como-pagaram').hidden = v !== 'meio';
+  marcar('visao', v);
+  lsSet('visao', v);
+}
+$('#visao-gastos').addEventListener('change', (e) => mostrarVisao(e.target.value));
+mostrarVisao(lsGet('visao') === 'meio' ? 'meio' : 'cat');
+
+$('#btn-sair').onclick = async () => {
+  if (!confirm('Sair do pagaAI neste aparelho?')) return;
+  await api('/api/logout', { method: 'POST' }).catch(() => {});
+  location.reload();
+};
 
 iniciar();

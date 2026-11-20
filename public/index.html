@@ -67,22 +67,24 @@
       <p class="contas-resumo" id="proximas-total"></p>
       <div class="contas-progresso"><i id="proximas-barra"></i></div>
       <div id="proximas-lista"></div>
+      <button type="button" id="proximas-pagas" class="link-mais" hidden></button>
     </section>
 
-    <!-- Para onde foi o dinheiro -->
+    <!-- Para onde foi o dinheiro / Como pagaram (abas) -->
     <section class="card">
-      <div class="card-titulo">
-        <h2>Para onde foi</h2>
-        <span class="sutil" id="qtd-categorias"></span>
+      <div class="seg seg-abas" id="visao-gastos">
+        <label><input type="radio" name="visao" value="cat" checked><span>Para onde foi</span></label>
+        <label><input type="radio" name="visao" value="meio"><span>Como pagaram</span></label>
       </div>
-      <div id="barra-categorias" class="barra-segmentada" role="img"></div>
-      <div id="grade-categorias" class="grade-categorias"></div>
-    </section>
-
-    <!-- Como pagaram: crédito, débito, Pix... -->
-    <section class="card" id="como-pagaram" hidden>
-      <div class="card-titulo"><h2>Como pagaram</h2><span class="sutil" id="como-pagaram-sub"></span></div>
-      <div id="como-pagaram-lista"></div>
+      <div id="visao-cat">
+        <p class="sutil visao-sub" id="qtd-categorias"></p>
+        <div id="barra-categorias" class="barra-segmentada" role="img"></div>
+        <div id="grade-categorias" class="grade-categorias"></div>
+      </div>
+      <div id="como-pagaram" hidden>
+        <p class="sutil visao-sub" id="como-pagaram-sub"></p>
+        <div id="como-pagaram-lista"></div>
+      </div>
     </section>
 
     <!-- Lançamentos -->
@@ -119,6 +121,12 @@
     </section>
 
     <div id="plano-conteudo">
+      <div class="seg seg-abas" id="plano-abas">
+        <label><input type="radio" name="planoaba" value="mes" checked><span>📈 Mês</span></label>
+        <label><input type="radio" name="planoaba" value="contas"><span>📄 Contas</span></label>
+        <label><input type="radio" name="planoaba" value="dividas"><span>🧾 Dívidas</span></label>
+      </div>
+     <div data-sub="mes">
       <section class="hero">
         <div class="hero-topo"><span id="plano-hero-rotulo">Sobra prevista no mês</span></div>
         <strong id="plano-sobra" class="hero-valor">R$ 0,00</strong>
@@ -128,11 +136,6 @@
           <div><span id="plano-variavel-rot">Dia a dia</span><b id="plano-variavel"></b></div>
         </div>
         <p id="plano-minimo" class="hero-rodape"></p>
-      </section>
-
-      <section class="card" id="card-saldos">
-        <div class="card-titulo"><h2>💰 Saldo agora</h2><b id="saldos-total"></b></div>
-        <div id="saldos-lista"></div>
       </section>
 
       <div id="plano-alertas"></div>
@@ -155,6 +158,8 @@
         <div id="sugestoes"></div>
       </section>
 
+     </div>
+     <div data-sub="contas" hidden>
       <section class="card">
         <div class="card-titulo"><h2>Salários</h2><button class="btn-add" data-novo="renda">+ Adicionar</button></div>
         <div id="lista-rendas" class="lista-plano"></div>
@@ -170,41 +175,59 @@
         <div id="lista-cartoes" class="lista-plano"></div>
       </section>
 
+      <section class="card ajustes-resumo">
+        <div><span class="rotulo">Na conta no dia 1</span><b id="ajuste-saldo"></b></div>
+        <div><span class="rotulo">Dia a dia por mês</span><b id="ajuste-variavel"></b><small id="ajuste-variavel-origem" class="sutil"></small></div>
+      </section>
+     </div>
+     <div data-sub="dividas" hidden>
       <section class="card">
         <div class="card-titulo"><h2>Dívidas parceladas</h2><button class="btn-add" data-novo="divida">+ Adicionar</button></div>
         <div id="resumo-dividas" class="resumo-dividas" hidden></div>
         <div id="lista-dividas" class="lista-plano"></div>
       </section>
-
-      <section class="card ajustes-resumo">
-        <div><span class="rotulo">Na conta no dia 1</span><b id="ajuste-saldo"></b></div>
-        <div><span class="rotulo">Dia a dia por mês</span><b id="ajuste-variavel"></b><small id="ajuste-variavel-origem" class="sutil"></small></div>
-      </section>
+     </div>
     </div>
+   </div>
 
-    <!-- Sempre visíveis, mesmo sem nada cadastrado no planejador -->
+   <!-- ================= Bancos ================= -->
+   <div id="pagina-bancos" hidden>
+    <header class="topo">
+      <div><span class="saudacao">Open Finance · Meu Pluggy</span><h1>Bancos</h1></div>
+    </header>
+    <section class="card" id="card-saldos">
+      <div class="card-titulo"><h2>💰 Saldo agora</h2><b id="saldos-total"></b></div>
+      <div id="saldos-lista"></div>
+    </section>
     <section class="card" id="card-bancos">
-      <div class="card-titulo"><h2>🏦 Bancos</h2><span class="sutil">Open Finance · Meu Pluggy</span></div>
+      <div class="card-titulo"><h2>🏦 Conexões</h2></div>
       <div id="bancos-conteudo"></div>
     </section>
+   </div>
 
+   <!-- ================= Mais ================= -->
+   <div id="pagina-mais" hidden>
+    <header class="topo">
+      <div><span class="saudacao">pagaAI</span><h1>Mais</h1></div>
+    </header>
     <section class="card" id="card-notif">
       <div class="card-titulo"><h2>🔔 Notificações</h2><span class="sutil">entradas e saídas</span></div>
       <div id="notif-conteudo"></div>
     </section>
-
     <section class="card">
       <div class="card-titulo"><h2>📱 Atalho do iPhone</h2><span class="sutil">últimas compras recebidas</span></div>
       <div id="atalho-log"></div>
     </section>
-
+    <button type="button" id="btn-sair" class="btn-sec btn-sair">Sair deste aparelho</button>
    </div>
 
     <!-- Barra de navegação -->
     <nav class="abas">
       <button class="aba ativa" data-aba="inicio"><span>🏠</span>Início</button>
-      <button id="btn-novo" class="fab" aria-label="Novo lançamento"><span>+</span></button>
       <button class="aba" data-aba="plano"><span>📅</span>Planejar</button>
+      <button id="btn-novo" class="fab" aria-label="Novo lançamento"><span>+</span></button>
+      <button class="aba" data-aba="bancos"><span>🏦</span>Bancos</button>
+      <button class="aba" data-aba="mais"><span>⚙️</span>Mais</button>
     </nav>
   </main>
 
