@@ -206,6 +206,12 @@ async function rotear(req, env, url) {
   // ---------- Bancos (Meu Pluggy / Open Finance) ----------
   if (pathname === '/api/bancos' && m === 'GET') return json(await listarBancos(env));
   if (pathname === '/api/bancos/sincronizar' && m === 'POST') return json(await sincronizarTodos(env, { manual: true }));
+  // Conectar pelo widget oficial da Pluggy: salva as chaves e devolve um token para abrir a janela
+  const mConectar = pathname.match(/^\/api\/bancos\/([^/]+)\/conectar$/);
+  if (mConectar && m === 'POST') return json(await tokenConexao(env, decodeURIComponent(mConectar[1]), await req.json().catch(() => ({}))));
+  // A janela da Pluggy terminou: guarda o Item ID que ela devolveu e já busca os lançamentos
+  const mItem = pathname.match(/^\/api\/bancos\/([^/]+)\/item$/);
+  if (mItem && m === 'POST') return json(await adicionarItem(env, decodeURIComponent(mItem[1]), await req.json().catch(() => ({}))));
   const mBanco = pathname.match(/^\/api\/bancos\/([^/]+)$/);
   if (mBanco && m === 'PUT') return json(await salvarBanco(env, decodeURIComponent(mBanco[1]), await req.json().catch(() => ({}))));
   if (mBanco && m === 'DELETE') {
@@ -553,6 +559,41 @@ async function salvarBanco(env, pessoa, b) {
   return { ok: true, resultado };
 }
 
+async function salvarCredenciais(env, pessoa, clientId, clientSecret) {
+  const base = env.PLUGGY_BASE || PLUGGY_BASE;
+  await clientePluggy({ clientId, clientSecret }, base).catch((e) => { throw erro(400, e.message); });
+  await env.DB.prepare(
+    `INSERT INTO bancos (pessoa, client_id, client_secret, itens) VALUES (?, ?, ?, '[]')
+     ON CONFLICT(pessoa) DO UPDATE SET client_id=excluded.client_id, client_secret=excluded.client_secret, ultimo_erro=NULL`
+  ).bind(pessoa, clientId, clientSecret).run();
+}
+
+async function tokenConexao(env, pessoa, b) {
+  if (!pessoas(env).includes(pessoa)) throw erro(400, 'Pessoa inválida');
+  const atual = await env.DB.prepare(`SELECT * FROM bancos WHERE pessoa=?`).bind(pessoa).first();
+  const clientId = String(b.clientId || '').trim() || atual?.client_id || '';
+  const clientSecret = String(b.clientSecret || '').trim() || atual?.client_secret || '';
+  if (!clientId || !clientSecret) throw erro(400, 'Informe o Client ID e o Client Secret');
+  if (clientId !== atual?.client_id || clientSecret !== atual?.client_secret) await salvarCredenciais(env, pessoa, clientId, clientSecret);
+  const cli = await clientePluggy({ clientId, clientSecret }, env.PLUGGY_BASE || PLUGGY_BASE);
+  const accessToken = await cli.connectToken(pessoa).catch((e) => { throw erro(502, e.message); });
+  return { accessToken };
+}
+
+async function adicionarItem(env, pessoa, b) {
+  const cfg = await env.DB.prepare(`SELECT * FROM bancos WHERE pessoa=?`).bind(pessoa).first();
+  if (!cfg) throw erro(400, 'Salve o Client ID e o Client Secret primeiro');
+  const id = String(b.id || '').trim();
+  if (!/^[A-Za-z0-9-]{8,64}$/.test(id)) throw erro(400, 'Item ID inválido');
+  const itens = JSON.parse(cfg.itens || '[]');
+  if (!itens.some((i) => i.id === id)) {
+    if (itens.length >= 5) throw erro(400, 'O plano grátis aceita até 5 conexões');
+    itens.push({ id, apelido: String(b.apelido || '').trim().slice(0, 30) });
+    await env.DB.prepare(`UPDATE bancos SET itens=? WHERE pessoa=?`).bind(JSON.stringify(itens), pessoa).run();
+  }
+  return { ok: true, resultado: await sincronizarPessoa(env, pessoa) };
+}
+
 async function sincronizarTodos(env, { manual = false } = {}) {
   const { results } = await env.DB.prepare(`SELECT pessoa FROM bancos`).all();
   const saida = [];
@@ -579,11 +620,16 @@ async function sincronizarPessoa(env, pessoa, { manual = false } = {}) {
   }
 
   for (const it of cli ? itens : []) {
-    const apelido = it.apelido || 'Banco';
+    let apelido = it.apelido || 'Banco';
     try {
       const item = await cli.item(it.id);
       const sit = situacaoItem(item, hoje);
       const contas = await cli.contas(it.id).catch(() => []);
+      if (!it.apelido && contas.length) {
+        it.apelido = nomeDaConta(contas.find((c) => c.type !== 'CREDIT') || contas[0]);
+        await env.DB.prepare(`UPDATE bancos SET itens=? WHERE pessoa=?`).bind(JSON.stringify(itens), pessoa).run();
+      }
+      apelido = it.apelido || apelido;
       const anterior = await env.DB.prepare(`SELECT aviso_em FROM pluggy_itens WHERE item_id=?`).bind(it.id).first();
       let avisoEm = anterior?.aviso_em || null;
       // Aviso de conexão parada ou vencendo: no máximo um por dia por banco

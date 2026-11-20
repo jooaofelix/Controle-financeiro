@@ -138,7 +138,20 @@ export async function clientePluggy({ clientId, clientSecret }, base = PLUGGY_BA
     return linhas;
   }
 
+  // Token de uso único para abrir o widget oficial Pluggy Connect no navegador (vale ~30 min)
+  async function connectToken(clientUserId) {
+    const res = await fetch(base + '/connect_token', {
+      method: 'POST',
+      headers: { ...headers, 'content-type': 'application/json' },
+      body: JSON.stringify({ clientUserId }),
+    });
+    const j = await res.json().catch(() => ({}));
+    if (!j.accessToken) throw new Error(`Pluggy não liberou a conexão (HTTP ${res.status}): ${JSON.stringify(j).slice(0, 160)}`);
+    return j.accessToken;
+  }
+
   return {
+    connectToken,
     item: (id) => get(`/items/${encodeURIComponent(id)}`),
     contas: async (itemId) => (await get(`/accounts?itemId=${encodeURIComponent(itemId)}`)).results || [],
     transacoes,
