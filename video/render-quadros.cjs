@@ -6,7 +6,7 @@ const path = require('path');
   const b = await chromium.launch();
   const p = await b.newPage({ viewport: { width: 1080, height: 1920 }, deviceScaleFactor: 1 });
   const erros = []; p.on('pageerror', (e) => erros.push(e.message));
-  await p.goto('file://' + path.resolve(__dirname, 'composicao.html'));
+  await p.goto('file://' + path.resolve(__dirname, process.env.COMP || 'composicao.html'));
   await p.evaluate(() => window.pronto);
   for (const t of tempos) {
     await p.evaluate((t) => window.render(t), Number(t));

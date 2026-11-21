@@ -16,3 +16,17 @@ node render-video.cjs /tmp/sem-audio.mp4
 python3 trilha.py /tmp/trilha.wav
 ffmpeg -i /tmp/sem-audio.mp4 -i /tmp/trilha.wav -c:v copy -c:a aac -b:a 192k -shortest saida/pagaai-video.mp4
 ```
+
+## Motion curto (estilo reel, 17,5 s)
+
+Telas do app flutuando em 3D, cortes rápidos com desfoque, números subindo e textos grandes.
+
+- `motion.html` — a animação (8 cenas: risco de luz → logo, gastos, busca "pro rolê?", Parceiro do rolê, "não tem tempo de anotar?", notificação, Colchão, final).
+- `trilha-motion.py` — trilha com os efeitos sincronizados às trocas de tela.
+- `saida/pagaai-motion.mp4` — vídeo final.
+
+```bash
+COMP=motion.html node render-video.cjs /tmp/sem-audio.mp4
+python3 trilha-motion.py /tmp/trilha.wav
+ffmpeg -i /tmp/sem-audio.mp4 -i /tmp/trilha.wav -c:v copy -c:a aac -b:a 192k -shortest saida/pagaai-motion.mp4
+```

@@ -7,7 +7,7 @@ const FPS = 30;
   const saida = process.argv[2];
   const b = await chromium.launch();
   const p = await b.newPage({ viewport: { width: 1080, height: 1920 }, deviceScaleFactor: 1 });
-  await p.goto('file://' + path.resolve(__dirname, 'composicao.html'));
+  await p.goto('file://' + path.resolve(__dirname, process.env.COMP || 'composicao.html'));
   await p.evaluate(() => window.pronto);
   const dur = await p.evaluate(() => window.DUR);
   const ff = spawn('ffmpeg', ['-y', '-loglevel', 'error', '-f', 'image2pipe', '-framerate', String(FPS), '-c:v', 'mjpeg', '-i', '-',
